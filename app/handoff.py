@@ -69,7 +69,7 @@ def verify_token(token: str) -> str:
 
 def _base(request) -> str:
     host = (request.headers.get("x-forwarded-host") or request.headers.get("host")
-            or "127.0.0.1:17867")
+            or "127.0.0.1:8080")
     proto = request.headers.get("x-forwarded-proto") or "https"
     return proto + "://" + host
 

@@ -11,7 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-BASE = "http://127.0.0.1:17867"
+BASE = os.getenv("BASE_URL") or "http://127.0.0.1:8080"
 BASE_DIR = os.getenv("BASE_DIR") or "/app"          # 部署目录（容器里是 /app）
 THUMBS = os.getenv("THUMB_DB") or (BASE_DIR + "/data/thumbs.db")
 EMBY = os.getenv("EMBY_DB") or (BASE_DIR + "/data/emby.db")

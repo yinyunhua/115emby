@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     ports:
       # 左边是宿主机端口，按需改；建议只监听 127.0.0.1 再挂反代
-      - "127.0.0.1:17867:8000"
+      - "127.0.0.1:8080:8000"
     env_file:
       - .env
     volumes:
