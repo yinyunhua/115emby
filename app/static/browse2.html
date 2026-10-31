@@ -1,0 +1,2665 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="build" content="20261022-frontend">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no">
+<title>115emby · 媒体库</title>
+<style>
+  :root{
+    /* req-nightteal：夜间底色改为深青蓝（参考图实测 rgb(16,42,56)）*/
+    --bg:#102a38; --panel:#0e2431; --card:#12303d; --card2:#16394a;
+    --line:#1d3d4d; --line2:#275164;
+    --fg:#e9edf5; --sub:#8b95a7; --dim:#5f6a7d;
+    --acc:#4c8dff; --ok:#3ecf8e;
+    --shadow:0 8px 28px rgba(0,0,0,.38);
+    --sidebar:250px; --tree:250px;
+     /* req-glasstune：玻璃统一 token —— 侧栏/顶栏/卡片/弹窗共用，
+        且**日间与夜间用同一个 alpha**（透明度统一，只换色相）。 */
+     --glass-a:rgba(8,24,33,.44);
+     --glass-b:rgba(4,16,23,.52);
+     --glass-line:rgba(140,215,235,.16);
+     --glass-hi:rgba(255,255,255,.10);
+     --glass-sh:rgba(0,0,0,.34);
+     --glass-card-line:rgba(190,240,255,.12);
+     --glass-card-hi:rgba(255,255,255,.12);
+     --glass-card-sh:0 8px 24px rgba(0,0,0,.44), 0 0 0 1px rgba(0,0,0,.24);
+     --glass-hover:rgba(14,40,52,.58);
+     --glass-modal:rgba(10,30,40,.62);
+     --glass-mask:rgba(2,10,14,.52);
+   }
+  html[data-theme="light"]{
+     /* req-glasstune：日间背景原来太亮（#f6f8fc），调暗一档，玻璃才有层次 */
+     --bg:#e7ecf4; --panel:#fff; --card:#fff; --card2:#f1f4f9;
+     --line:#dbe2ee; --line2:#ccd6e6;
+     /* req-lighttext：白玻璃上的次要文字/数量原来太浅看不清，加深一档 */
+     --fg:#131922; --sub:#3d4a60; --dim:#4f5c70;
+     --shadow:0 8px 22px rgba(16,24,40,.10);
+     /* 与夜间**同一组 alpha**（透明度统一） */
+     --glass-a:rgba(255,255,255,.44);
+     --glass-b:rgba(243,246,251,.52);
+     --glass-line:rgba(24,42,76,.12);
+     --glass-hi:rgba(255,255,255,.70);
+     --glass-sh:rgba(24,42,76,.08);
+     --glass-card-line:rgba(24,42,76,.12);
+     --glass-card-hi:rgba(255,255,255,.80);
+     --glass-card-sh:0 8px 22px rgba(24,42,76,.10), 0 0 0 1px rgba(24,42,76,.04);
+     --glass-hover:rgba(255,255,255,.62);
+     --glass-modal:rgba(255,255,255,.72);
+     --glass-mask:rgba(18,26,38,.34);
+   }
+  *{box-sizing:border-box}
+  /* html-fill-fix：html 必须撑满视口，body 的背景才能覆盖真实上下边缘。
+     播放页正是因为有 html{height:100%} 才没有白条（对比定位到的差异）。
+     只设 height，不设任何 background，避免遮挡 z-index:-1 的光斑层。 */
+  html{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);height:100vh;overflow:hidden;
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+  /* ===== scrollbar-v3：细胶囊 · 圆角 · 不滚动自动隐藏 ===== */
+  /* 原生滚动条隐藏（滚动能力不变，只是不显示） */
+  .tree::-webkit-scrollbar,.body::-webkit-scrollbar{width:0;height:0;display:none}
+  .tree,.body{scrollbar-width:none;-ms-overflow-style:none}
+
+  /* 自定义滑块：容器右侧绝对定位，由 JS 同步位置与高度 */
+  /* req2567-scrollbar：移除 .sb-fake 浮层。
+     重影原因：#sbar(CSS 画,z-index:30) 与 .sb-fake(JS 插入,z-index:15) 两套指示条
+     都在 #body 滚动时显示、都在右侧 → 视觉上叠成两条。只保留 #sbar。 */
+
+
+  .app{display:flex;height:100vh}
+
+  /* ---------- 左侧：库 + 目录树 ---------- */
+  .side{width:var(--sidebar);flex:0 0 var(--sidebar);background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;min-height:0;position:relative}
+  .brand{display:flex;align-items:center;gap:9px;padding:15px 14px 10px}
+  .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--acc),#7c5cff);
+    display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;letter-spacing:-.5px}
+  .brand b{font-size:14.5px}
+  .brand small{display:block;color:var(--dim);font-size:11px}
+  .libs{display:flex;flex-direction:column;gap:1px;padding:0 8px}
+  .libs button{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;
+    color:var(--sub);font-size:13.5px;text-align:left;transition:.14s}
+  .libs button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .libs button:hover{background:var(--card);color:var(--fg)}
+  .libs button.on{background:linear-gradient(90deg,rgba(76,141,255,.18),rgba(76,141,255,.04));
+    color:var(--fg);box-shadow:inset 2px 0 0 var(--acc)}
+  .secttl{display:flex;align-items:center;gap:6px;padding:14px 16px 6px;color:var(--dim);
+    font-size:11px;letter-spacing:.9px;text-transform:uppercase}
+  .secttl .grow{flex:1}
+  .secttl button{color:var(--dim);font-size:11px;padding:2px 6px;border-radius:6px}
+  .secttl button:hover{background:var(--card);color:var(--fg)}
+
+  .tree{flex:1;min-height:0;overflow:auto;padding:0 6px 14px 8px}
+  .node{user-select:none}
+  .row{display:flex;align-items:center;gap:5px;padding:6px 8px;border-radius:8px;color:var(--sub);
+    font-size:13px;cursor:pointer;transition:.12s}
+  .row:hover{background:var(--card);color:var(--fg)}
+  .row.on{background:var(--card2);color:var(--fg);box-shadow:inset 2px 0 0 var(--acc)}
+  .row .tw{width:14px;height:14px;flex:0 0 14px;display:grid;place-items:center;color:var(--dim);
+    font-size:9px;transition:transform .15s}
+  .row .tw.open{transform:rotate(90deg)}
+  .row .tw.leaf{visibility:hidden}
+  .row .ic{width:15px;height:15px;flex:0 0 15px;color:#7f8ea6}
+  html[data-theme="light"] .row .ic{color:#5a6678}
+  .row .ic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.6}
+  /* ★ req-marquee：名字太长时**滚动显示**（不截断成省略号）
+     触发方式：鼠标悬停 / 触摸长按 / 键盘聚焦。滚动距离与时长按实际溢出算，
+     短名字不滚动（--mq 由 JS 写，缺省 0）。 */
+  .row .nm{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .nm.mq{text-overflow:clip}
+  /* ⛔ <i> 必须是 inline-block 且 **position:relative**，否则 offsetWidth/scrollWidth
+     都等于父宽，溢出恒算成 0（我第一次就是这么写的，mqCount 一直是 0）。 */
+  .nm.mq > i{display:inline-block;white-space:nowrap;padding-right:2.2em;
+    animation:nmq var(--mq-dur,3s) linear infinite alternate paused}
+  .nm .mq-in{display:inline-block;white-space:nowrap}
+  .row:hover .nm.mq > i,.row:focus-within .nm.mq > i,
+  .fcard:hover .nm.mq > i,.fcard:focus-within .nm.mq > i,
+  .lr:hover .nm.mq > i,.lr:focus-within .nm.mq > i,
+  .nm.mq.touched > i{animation-play-state:running}
+  @keyframes nmq{from{transform:translateX(0)}to{transform:translateX(var(--mq,0))}}
+  @media (prefers-reduced-motion:reduce){.nm.mq > i{animation:none}}
+  .row .ct{font-size:10.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .kids{display:none;margin-left:11px;border-left:1px solid var(--line);padding-left:3px}
+  .kids.open{display:block}
+  /* req-libsize：页脚四项 2×2 对齐（标签等宽 → 数值逐列对齐）；数值不做额外提亮/加粗 */
+  .sidefoot{border-top:1px solid var(--line);padding:11px 16px 12px;color:var(--dim);
+    font-size:11.5px;line-height:1.9;display:grid;grid-template-columns:1fr 1fr;
+    column-gap:10px;row-gap:1px;font-variant-numeric:tabular-nums}
+  .sidefoot .k{color:var(--dim)}
+  .sidefoot b{color:var(--sub);font-weight:400;margin-left:6px}
+
+  /* 单元格不许折行（折行会与相邻列错位）；窄屏把内边距与列间距收紧，
+     给「视频数 4.5万 / 库容量 12.9T」留出余量 */
+  .sidefoot>div{white-space:nowrap;min-width:0}
+  @media(max-width:420px){
+    .sidefoot{padding:10px 12px 11px;column-gap:6px}
+    .sidefoot b{margin-left:4px}
+  }
+
+  /* ---------- 右侧 ---------- */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;position:relative}
+  .top{display:flex;align-items:center;gap:10px;padding:11px 20px;border-bottom:1px solid var(--line);
+    background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);z-index:20}
+  /* 目录名独占一个可伸缩车道，右侧按钮组各占固定车道 —— 名字再长也不会把按钮挤走 */
+  .crumbs{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--sub);
+    flex:1 1 auto;min-width:0;overflow:hidden;white-space:nowrap}
+  .crumbs b{color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .crumbs span{color:var(--dim)}
+  .crumbs button{padding:2px 6px;border-radius:6px;color:var(--sub)}
+  .crumbs button:hover{background:var(--card);color:var(--fg)}
+  .top>.dsel,.top>.chips,.top>.iconbtn,.top>.drawer,.top>.seg{flex:0 0 auto}
+  .grow{flex:1}
+
+  /* 右侧滚动指示条：iOS Safari 没有常显滚动条，这里自绘一个（不占布局） */
+  #sbar{position:absolute;right:2px;top:56px;bottom:4px;width:5px;pointer-events:none;
+    opacity:0;transition:opacity .2s;z-index:30}
+  #sbar.on{opacity:1}
+  #sthumb{position:absolute;right:0;width:4px;min-height:30px;border-radius:99px;
+    background:rgba(255,255,255,.3);transition:background .15s}
+  #sbar.busy #sthumb{background:rgba(255,255,255,.62)}
+  html[data-theme="light"] #sthumb{background:rgba(20,30,50,.28)}
+  html[data-theme="light"] #sbar.busy #sthumb{background:rgba(20,30,50,.55)}
+
+  /* 搜索视图 */
+  /* req-search-ui：搜索框间距/圆角/字号与主界面控件统一
+     （下间距 11px = .gridhead 的下间距；圆角 11px = 卡片；字号 14px = .gridhead h2） */
+  .sbox{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);
+    border-radius:11px;padding:9px 12px;margin:0 0 11px}
+  .sbox svg{width:16px;height:16px;stroke:var(--dim);fill:none;stroke-width:2;flex:0 0 16px}
+  .sbox input{flex:1;min-width:0;border:none;background:none;outline:none;color:var(--fg);font-size:14px}
+  .sbox input::placeholder{color:var(--dim)}
+  .sbox .clr{color:var(--dim);padding:2px 7px;border-radius:7px;font-size:12.5px}
+  .sbox .clr:hover{background:var(--card2);color:var(--fg)}
+  /* 搜索按钮：显式触发，避免拼音输入法把确认键当成"开始搜索" */
+  .sbox .go{flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:9px;
+    background:var(--acc);color:#fff;font-size:12.5px;font-weight:600}
+  .sbox .go svg{width:13px;height:13px;stroke:#fff;stroke-width:2.4;fill:none;flex:0 0 13px}
+  .sbox .go:active{filter:brightness(.9)}
+  .search{display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--line);
+    border-radius:99px;padding:7px 13px;min-width:170px}
+  .search svg{width:14px;height:14px;stroke:var(--dim);fill:none;stroke-width:2}
+  .search input{border:none;background:none;outline:none;color:var(--fg);font-size:13px;width:100%}
+  .search input::placeholder{color:var(--dim)}
+  .seg{display:inline-flex;background:var(--card);border:1px solid var(--line);border-radius:99px;padding:2px}
+  .seg button{padding:5px 10px;border-radius:99px;color:var(--sub);font-size:12.5px}
+  .seg button.on{background:var(--line2);color:var(--fg)}
+  /* ---------- 顶栏自定义下拉（req-topsel：替原生 select，风格与站点一致）---------- */
+  .dsel{position:relative}
+  .dsel-b{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);
+    border-radius:99px;padding:7px 10px;color:var(--sub);font-size:12.5px;white-space:nowrap;cursor:pointer}
+  .dsel-b:hover{color:var(--fg);border-color:var(--line2)}
+  .dsel.on .dsel-b{color:var(--fg);border-color:var(--acc)}
+  .dsel-c{width:11px;height:11px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round;transition:transform .15s}
+  .dsel.on .dsel-c{transform:rotate(180deg)}
+  .dsel-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:70;min-width:100%;
+    display:none;flex-direction:column;gap:2px;padding:5px;border-radius:14px;
+    background:var(--glass-modal);border:1px solid var(--line);box-shadow:0 12px 34px rgba(0,0,0,.38);
+    backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%)}
+  .dsel.on .dsel-menu{display:flex}
+  .dsel-menu [data-v]{padding:7px 14px;border-radius:9px;color:var(--sub);font-size:12.5px;
+    text-align:left;white-space:nowrap}
+  .dsel-menu [data-v]:hover,.dsel-menu [data-v].hl{background:var(--glass-hover);color:var(--fg)}
+  .dsel-menu [data-v].on{color:var(--fg);background:var(--line2)}
+  .iconbtn{width:33px;height:33px;border-radius:50%;display:grid;place-items:center;background:var(--card);
+    border:1px solid var(--line);color:var(--sub)}
+  .iconbtn:hover{color:var(--fg)}
+  .iconbtn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+
+  .body{position:relative;flex:1;overflow:auto;padding:16px 20px 60px;min-height:0}   /* req-glow4：作为绝对定位光斑层的包含块（滚动内容坐标系） */
+
+  /* 文件夹行 */
+  /* req-frowfix：子目录卡改**固定宽度**。
+     原 minmax(168px,1fr) 在子目录只有 1~2 个时，1fr 会把卡片拉伸到铺满整行
+     （电脑 1920px 下单卡近 1880px，用户反馈"目录图片特别大"）；
+     手机端 880px 内本来就有 132px 固定覆盖，所以手机正常、电脑异常。
+     改固定 168px 后，任意视口、任意数量都是同样大小。 */
+  .frow{display:grid;grid-auto-flow:column;grid-auto-columns:168px;gap:11px;
+    overflow-x:auto;padding:2px 0 12px;scrollbar-width:none}
+  .frow::-webkit-scrollbar{display:none}
+  /* ===== req-fbar：横排目录的滑动条（电脑 + 手机，位于目录行下方，可拖动） =====
+     之前 .frow 完全隐藏滚动条又没有替代控件，**鼠标用户（无横向滚轮）根本没法
+     横向翻目录**。原生条保持隐藏（否则原生 + 自定义两条并存，重影），
+     用下面这条自定义条：可点轨道跳转、可拖滑块、跟随主题。 */
+  /* ★ req-fbarslim：横向条按**右侧竖向条**（#sbar / #sthumb）的样式做小。
+     竖向条是 4px 细滑块 + 无轨道 + 默认半透明，这里对齐：
+     · 高度 12px（不占视觉，触摸仍可命中）
+     · 滑块 4px 高、圆角、默认 rgba 半透明，悬停/拖动才变主题色
+     · 去掉整条轨道（原来是 4px 实心 --line2，看着太重）
+     · 只留一条极淡的底线作为"可滚动"提示，鼠标离开就淡掉 */
+  .fbar{position:relative;height:12px;margin:0 0 10px;display:flex;align-items:center;
+    touch-action:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .fbar[hidden]{display:none}
+  .fbar::before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;
+    transform:translateY(-50%);border-radius:99px;background:var(--line2);
+    opacity:.28;transition:opacity .18s}
+  .fbar:hover::before,.fbar.on::before{opacity:.5}
+  .fbar .fb-t{position:relative;height:4px;border-radius:99px;
+    background:rgba(255,255,255,.30);transition:background .15s,opacity .15s;
+    min-width:26px;flex:0 0 auto}
+  .fbar:hover .fb-t,.fbar.on .fb-t{background:rgba(255,255,255,.62)}
+  html[data-theme="light"] .fbar .fb-t{background:rgba(20,30,50,.28)}
+  html[data-theme="light"] .fbar:hover .fb-t,
+  html[data-theme="light"] .fbar.on .fb-t{background:rgba(20,30,50,.55)}
+  /* 触摸设备：命中区仍给足 20px（视觉还是 4px 细条） */
+  @media (hover: none) and (pointer: coarse){
+    .fbar{height:20px;margin:-2px 0 10px}
+    .fbar .fb-t{height:5px;min-width:34px}
+  }
+  .fcard{background:var(--card);border:1px solid var(--line);border-radius:11px;overflow:hidden;
+    cursor:pointer;transition:.15s;position:relative}
+  .fcard:hover{transform:translateY(-2px);border-color:var(--line2);box-shadow:var(--shadow)}
+  /* ★ req-coverfit：封面**永远铺满整个封面区**，不管几张预览图。
+     原来只有 1 张时用 single（铺满整块），2 张/4 张走 2×2 网格 → 单图看起来比网格图
+     大一圈，用户反馈"横排子级封面图片大小不一、有些没完全覆盖"。
+     现在按张数**精确切分**：1 张=1×1、2 张=2×1、3~4 张=2×2，每格都占满，
+     没有留白、没有半格。 */
+  .fcard .cv{aspect-ratio:16/10;position:relative;overflow:hidden;display:grid;
+    grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:1px;background:var(--line)}
+  .fcard .cv.single{grid-template-columns:1fr;grid-template-rows:1fr}
+  .fcard .cv.two{grid-template-columns:1fr 1fr;grid-template-rows:1fr}
+  .fcard .cv.three{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+  /* 4 张也走 .three 的 2×2；3 张时首张跨两行 */
+  .fcard .cv.three .q{grid-row:auto}
+  .fcard .cv.three.n3 .q:first-child{grid-row:span 2}
+  .fcard .cv.three .q:first-child{grid-row:span 2}      /* 3 张：首张占左半，右半上下各一 */
+  .fcard .cv .q{position:relative;min-width:0;min-height:0;overflow:hidden}
+  .fcard .cv img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
+  .fcard .ct{position:absolute;left:8px;top:8px;background:rgba(8,10,15,.72);color:#fff;
+    font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:99px;backdrop-filter:blur(4px)}
+  .fcard .nm{padding:8px 10px 9px;font-size:12.5px;display:flex;align-items:center;gap:5px}
+  .fcard .nm svg{width:13px;height:13px;flex:0 0 13px;fill:none;stroke:#7f8ea6;stroke-width:1.7}
+  html[data-theme="light"] .fcard .nm svg{stroke:#5a6678}
+  .fcard .nm span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  /* 卡片名也支持滚动（同 req-marquee） */
+  .fcard .nm.mq span{text-overflow:clip}
+  .fcard .nm.mq span i{display:inline-block;white-space:nowrap;padding-right:2.2em;
+    animation:nmq var(--mq-dur,3s) linear infinite alternate paused}
+  .fcard .nm span .mq-in{display:inline-block;white-space:nowrap}
+  .fcard:hover .nm.mq span i,.fcard:focus-within .nm.mq span i,
+  .fcard .nm.mq.touched span i{animation-play-state:running}
+
+  /* 返回上级卡 */
+  .up{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:9px;padding:6px 12px;margin-bottom:8px;
+    border:1px solid var(--line2);color:var(--sub);font-size:12.5px;cursor:pointer;min-height:34px;
+    background:transparent;transition:.15s}
+  .up:hover{border-color:var(--acc);color:var(--fg)}
+  /* req-back2discover：「返回上级」与「返回发现」并排一行 */
+  /* req-back2discover：「返回上级」靠左、「返回发现」靠右 —— 两端对称（不挤在一起） */
+  .uprow{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;justify-content:space-between;align-items:center}
+  .uprow .up{margin-bottom:0}
+  /* 「返回发现」与「返回上级」保持同一亮度/描边（之前加了蓝色强调，会显得一亮一暗） */
+  .up-back{border-color:var(--line2);color:var(--sub)}
+
+  .gridhead{display:flex;align-items:center;gap:10px;margin:4px 0 11px;flex-wrap:wrap;row-gap:6px}
+  .gridhead h2{font-size:14px;font-weight:650;margin:0;white-space:nowrap;flex:0 0 auto}
+  .gridhead .cnt{color:var(--dim);font-size:12px;flex:1 1 180px;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .gridhead .chip{flex:0 0 auto}
+
+@media (hover: none) and (pointer: coarse) {
+  /* ===== req-resp：触摸设备点击目标至少 32px =====
+     不按宽度判断 —— iPad 834/1024 宽度超过 880/700 但仍是触摸设备。
+     Apple HIG 建议 44px、Material 48px；这里取可达下限 32px（再大会挤坏顶栏）。 */
+  #collapseAll{min-height:32px;padding:6px 10px}
+  .gridhead .chip,#reshuffle{min-height:32px;padding:6px 12px;display:inline-flex;
+    align-items:center;justify-content:center}
+  .fbtn{width:32px;height:32px}
+  .iconbtn,.drawer{width:38px;height:38px}
+  .seg button{min-height:32px;padding:7px 12px}
+  .dsel-b{min-height:32px}
+}
+  @media(max-width:640px){
+    .gridhead{gap:8px;flex-wrap:nowrap}                /* 窄屏也保持一行 */
+    .gridhead h2{font-size:13.5px}
+    .gridhead .cnt{flex:1 1 auto;min-width:0;white-space:nowrap;
+      overflow:hidden;text-overflow:ellipsis;font-size:11.5px}
+    .gridhead .chip{padding:3px 8px;font-size:11.5px}
+  }
+
+  /* 媒体网格 */
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+  @media(min-width:620px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media(min-width:960px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+  @media(min-width:1320px){.grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+  @media(min-width:1720px){.grid{grid-template-columns:repeat(6,minmax(0,1fr))}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:11px;overflow:hidden;cursor:pointer;
+    transition:transform .15s,border-color .15s,box-shadow .15s;position:relative;-webkit-tap-highlight-color:transparent}
+  .card:hover{transform:translateY(-3px);border-color:var(--line2);box-shadow:var(--shadow)}
+  /* 缩略图要一直铺到卡片底边（含信息栏那一条），文字才是"压在图上"，
+     渐变也才能真正和图片衔接 —— 之前 .ph 被裁成正方形，底下必然是实色块。 */
+  .card .ph{aspect-ratio:1/1;position:relative;overflow:visible}
+  .card .ph>img[data-thumb]{height:calc(100% + 51px) !important}
+  /* 列表模式（mode=list）不用浮层，保持原来的"图在一行里"的排布 */
+  .listview .card{padding-bottom:0}
+  .badge{position:absolute;top:7px;right:7px;display:inline-flex;align-items:center;gap:4px;
+    background:rgba(8,10,15,.72);color:#fff;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:99px;z-index:2}
+  .badge svg{width:8px;height:8px;fill:#fff}
+  /* 编码角标：只有"探到编码且浏览器解不了"才出现 */
+  .cbadge{position:absolute;top:7px;left:7px;background:rgba(180,40,40,.86);color:#fff;
+    font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px;letter-spacing:.3px;z-index:2}
+  .cbadge.hevc{background:rgba(196,120,20,.9)}
+  /* 缩略图右下角"跳到所在目录"（随机发现/搜索里才有） */
+  .fbtn{position:absolute;right:8px;bottom:10px;width:28px;height:28px;border-radius:8px;z-index:5;
+    background:rgba(8,10,15,.66);display:grid;place-items:center;z-index:3;
+    border:1px solid rgba(255,255,255,.16)}
+  .fbtn svg{width:14px;height:14px;fill:none;stroke:#dfe6f2;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round}
+  .fbtn:hover{background:var(--acc)}
+  .card .meta b{font-size:12px}
+  /* 观看进度条要压在渐变浮层之上（否则被浮层盖住） */
+  .bar{position:absolute;left:0;right:0;bottom:0;height:3px;z-index:4;background:rgba(255,255,255,.24)}
+  .bar i{display:block;height:100%;background:var(--acc)}
+  .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.9);width:44px;height:44px;
+    border-radius:50%;background:rgba(255,255,255,.94);display:grid;place-items:center;opacity:0;transition:.15s}
+  .card:hover .play{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  .play svg{width:17px;height:17px;fill:#0d1016;margin-left:2px}
+  /* 信息栏：不做成"图片下面另起一块"，而是压在图片底部的一条渐变浮层，
+     往上方自然淡出（用户要求：渐变透明、和图片自然衔接） */
+  /* 信息栏 = 压在图片底部的一条渐变（底不透明 → 顶全透明），
+     上边界没有任何硬线，和图片自然衔接；右边留 46px 给"跳目录"图标。 */
+  .card .meta{position:absolute;inset:0;padding:86px 46px 9px 10px;z-index:1;
+    display:flex;flex-direction:column;justify-content:flex-end;
+    /* meta-fixed-px：改用固定像素，渐变只覆盖底部 110px，与卡片高度无关。
+       百分比版本在"最下一排卡片被工具栏遮住"时会被截断，视觉上和上面不一致。 */
+    background:linear-gradient(to top,
+      rgba(9,11,16,.95) 0, rgba(9,11,16,.88) 14px, rgba(9,11,16,.64) 34px,
+      rgba(9,11,16,.32) 58px, rgba(9,11,16,.10) 82px, rgba(9,11,16,0) 110px);
+    pointer-events:none}
+  .card .meta b{display:block;font-size:12px;font-weight:600;line-height:1.3;
+    color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .meta span{display:block;color:rgba(226,233,244,.72);font-size:10.5px;margin-top:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card:hover .meta span{color:rgba(240,244,250,.9)}
+  /* 卡片高度要和"以前：缩略图 + 信息栏"的总高一致 ——
+     图片按 1:1 排并**向下铺满整张卡**（含信息栏那一条），
+     信息栏是压在图片底部的渐变，右侧留出"跳目录"图标的位置。 */
+  .card{background:#0f131a;padding-bottom:51px}
+  .card .ph{aspect-ratio:1/1;border-radius:0}
+
+  /* 月份分组 */
+  .mhead{grid-column:1/-1;display:flex;align-items:center;gap:10px;margin:8px 0 2px;
+    color:var(--sub);font-size:12.5px;font-weight:600}
+  .mhead:after{content:"";flex:1;height:1px;background:var(--line)}
+  .mhead em{color:var(--dim);font-style:normal;font-weight:400}
+
+  /* 列表模式 */
+  .list{background:var(--card);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+  .lh,.lr{display:grid;grid-template-columns:1fr 108px 132px 20px;gap:10px;align-items:center;padding:10px 14px;font-size:13px}
+  .lh{color:var(--dim);font-size:11px;letter-spacing:.6px;text-transform:uppercase;
+    border-bottom:1px solid var(--line);background:var(--card2)}
+  .lr{border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);color:var(--sub);cursor:pointer}
+  .lr:last-child{border-bottom:none}
+  .lr:hover{background:var(--card2);color:var(--fg)}
+  .lr .nm{display:flex;align-items:center;gap:9px;min-width:0;color:var(--fg)}
+  .lr .nm i{flex:0 0 auto;width:28px;height:28px;border-radius:7px;display:grid;place-items:center;
+    background:var(--card2);border:1px solid var(--line);font-style:normal;font-size:13px}
+  .lr .nm b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lr .arw{text-align:right;color:var(--dim)}
+
+  .chips{display:flex;gap:6px}
+  .chip{padding:4px 10px;border-radius:99px;background:var(--card);border:1px solid var(--line);
+    color:var(--sub);font-size:12px;cursor:pointer;white-space:nowrap}
+  .chip.on{background:var(--acc);border-color:var(--acc);color:#fff}
+  .empty{padding:44px 20px;text-align:center;color:var(--dim);font-size:13px}
+
+  /* ---------- 灯箱 ---------- */
+  #lb{position:fixed;inset:0;z-index:100;background:#07090d;display:none;align-items:center;justify-content:center}
+  #lb.on{display:flex}
+  #lbTop{position:absolute;top:0;left:0;right:0;z-index:3;display:flex;align-items:center;gap:10px;
+    padding:11px 15px;background:linear-gradient(rgba(7,9,13,.94),rgba(7,9,13,0));color:#e9edf5}
+  #lbName{flex:1;font-size:13px;color:#aab4c4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #lbIdx{font-size:12px;color:#7c8798;font-variant-numeric:tabular-nums}
+  #lbTop button{width:33px;height:33px;border-radius:50%;background:rgba(255,255,255,.1);color:#e9edf5;
+    display:grid;place-items:center}
+  #lbTop button svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round}
+  #lbStage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
+  #lbRot{display:flex;align-items:center;justify-content:center;width:100%;height:100%}
+  #lbRot.rot90{width:100vh;height:100vw;transform:rotate(90deg)}
+  #lbImg{max-width:100%;max-height:100%;object-fit:contain;transform-origin:center;will-change:transform}
+  #lbBar{position:absolute;left:0;right:0;bottom:0;z-index:3;display:flex;align-items:center;gap:10px;
+    padding:13px 16px 16px;background:linear-gradient(rgba(7,9,13,0),rgba(7,9,13,.94));color:#aab4c4}
+  #lbInfo{flex:1;font-size:12px}
+  #lbBar button{border:1px solid #2a3240;background:rgba(255,255,255,.08);color:#e9edf5;border-radius:8px;
+    padding:6px 11px;font-size:12.5px}
+  /* iOS 没有元素级全屏 API：伪全屏时把顶栏/底栏收掉，画面自然满屏 */
+  #lb.pseudo-fs #lbTop,#lb.pseudo-fs #lbBar{display:none}
+  /* 刘海 / 圆角 / Home 条安全区 */
+  #lbTop{padding-top:calc(11px + env(safe-area-inset-top,0px));
+          padding-left:calc(15px + env(safe-area-inset-left,0px));
+          padding-right:calc(15px + env(safe-area-inset-right,0px))}
+  #lbBar{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));
+         padding-left:calc(16px + env(safe-area-inset-left,0px));
+         padding-right:calc(16px + env(safe-area-inset-right,0px))}
+
+  /* ---------- 移动端：树变抽屉 ---------- */
+  .drawer{display:none}
+  @media(max-width:880px){
+    .side{position:fixed;left:0;top:0;bottom:0;z-index:60;transform:translateX(-100%);
+      transition:transform .2s;box-shadow:var(--shadow);width:50vw;max-width:50vw}
+    .side.open{transform:none}
+    .scrim{position:fixed;inset:0;background:rgba(6,8,12,.55);z-index:59;display:none}
+    .scrim.on{display:block}
+    .drawer{display:grid;place-items:center;width:33px;height:33px;border-radius:50%;
+      background:var(--card);border:1px solid var(--line);color:var(--sub)}
+    .drawer svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round}
+    .top{padding:9px 11px;gap:7px;flex-wrap:wrap}
+    .search{order:9;width:100%;min-width:0}
+    .body{padding:12px 11px 50px}
+    .frow{grid-auto-columns:132px}
+    .lh{display:none}
+    .lr{grid-template-columns:1fr auto;gap:8px}
+    .lr .sz,.lr .dt{display:none}
+    /* ===== req-resp：手机端可点元素至少 32px 高 =====
+       实测（390px）：#collapseAll 34x21、#reshuffle 53x25、.fbtn 28x28、.drawer 33x33。
+       Apple HIG 建议 44px、Material 48px；这里先取可达下限 32px（再大会把顶栏挤换行）。 */
+    #collapseAll{min-height:32px;padding:6px 10px}
+    .gridhead .chip,#reshuffle{min-height:32px;padding:6px 12px;display:inline-flex;
+      align-items:center;justify-content:center}
+    .fbtn{width:32px;height:32px}
+    .iconbtn,.drawer{width:38px;height:38px}
+    .seg button{min-height:32px;padding:7px 12px}
+    .dsel-b{min-height:32px}
+  }
+  button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visible,.fcard:focus-visible{
+    outline:2px solid var(--acc);outline-offset:3px}
+  .gridhead{gap:10px;flex-wrap:wrap;align-items:center}
+  .gridhead h2{letter-spacing:.3px}
+  .gridhead .cnt{font-variant-numeric:tabular-nums}
+  .card,.fcard{border-radius:14px;transition:border-color .18s,box-shadow .18s}
+  .card:hover,.fcard:hover{border-color:var(--line2);box-shadow:0 6px 22px rgba(0,0,0,.12)}
+  .empty{line-height:2;color:var(--sub)}
+  .empty .chip{margin-top:12px;border:1px solid var(--line2);padding:6px 18px}
+  .up[aria-disabled="true"]{pointer-events:none;opacity:.5}
+  @media(max-width:760px){
+    .top{flex-wrap:nowrap;gap:5px}
+    .chips{gap:3px;flex-shrink:0}
+    .chips .chip{padding:5px 8px;font-size:11.5px}
+    .dsel-b{padding:7px 8px;font-size:11.5px}
+    .drawer,#theme{flex:0 0 33px}
+  }
+  /* 50vw 在超窄屏（<=360px）只有 180px 会把目录名挤没，保底 180px */
+  @media(max-width:400px){
+    html body .side{width:max(50vw,180px) !important;max-width:max(50vw,180px) !important}
+  }
+  @media(max-width:359px){
+    /* 极窄屏：目录名占第一行，控件排第二行（req-topsel：6 个控件显式分列） */
+    .top{display:grid;grid-template-columns:auto auto auto 33px;justify-content:space-between;row-gap:8px}
+    .drawer{grid-row:1;grid-column:1}
+    .crumbs{grid-row:1;grid-column:2/-1;min-width:0}
+    #chips{grid-row:2;grid-column:1}
+    #sort{grid-row:2;grid-column:2}
+    #toTop{grid-row:2;grid-column:3;justify-self:center}
+    #theme{grid-row:2;grid-column:4;justify-self:end}
+  }
+  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+  /* req2567-modal：磨砂风格确认弹窗（替代原生 confirm）
+     风格对齐页面卡片体系：backdrop-filter + 半透明深色 + 细描边 + 内高光 */
+  #gotoMask{position:fixed;inset:0;z-index:200;display:none;
+    background:var(--glass-mask);
+    -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+    align-items:center;justify-content:center;padding:20px}
+  #gotoMask.on{display:flex}
+  #gotoModal{width:min(340px,88vw);
+    background:var(--glass-modal);
+    -webkit-backdrop-filter:blur(22px) saturate(1.35);
+    backdrop-filter:blur(22px) saturate(1.35);
+border:1px solid var(--glass-card-line);
+    border-radius:16px;
+    box-shadow:0 18px 50px var(--glass-sh),inset 0 1px 0 var(--glass-card-hi);
+    padding:20px 18px 16px;color:var(--fg);
+    transform:translateY(6px) scale(.98);opacity:0;
+    transition:transform .18s ease,opacity .18s ease}
+  #gotoMask.on #gotoModal{transform:none;opacity:1}
+  #gotoModal .ttl{font-size:13px;color:var(--sub);letter-spacing:.3px;margin:0 0 10px}
+#gotoModal .dir{font-size:15px;font-weight:650;line-height:1.55;color:var(--fg);
+    word-break:break-word;margin:0 0 6px}
+  #gotoModal .sub{font-size:12px;color:var(--dim);line-height:1.5;margin:0 0 18px}
+  #gotoModal .row{display:flex;gap:10px}
+  #gotoModal button{flex:1;min-height:40px;border-radius:11px;font-size:14px;font-weight:600;
+    border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.09);color:var(--fg);
+    transition:background .15s,border-color .15s}
+  #gotoModal button:active{background:rgba(255,255,255,.16)}
+  #gotoModal button.pri{background:var(--acc);border-color:transparent;color:#fff;
+    box-shadow:0 6px 18px rgba(76,141,255,.35)}
+  #gotoModal button.pri:active{filter:brightness(.92)}
+  /* 电脑端：略宽、字大一点 */
+  @media(hover:hover) and (pointer:fine){
+    #gotoModal{width:380px;padding:24px 22px 18px}
+    #gotoModal .ttl{font-size:13.5px}
+    #gotoModal .dir{font-size:16px}
+    #gotoModal .sub{font-size:12.5px}
+    #gotoModal button{min-height:42px;font-size:14.5px}
+    #gotoModal button:hover{background:rgba(255,255,255,.14)}
+    #gotoModal button.pri:hover{background:#5a97ff}
+  }
+</style>
+<style>
+/* 页面固定：禁止双指缩放/双击缩放（看图遮罩与播放页舞台自带 touch-action:none，不受影响） */
+html,body{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%;text-size-adjust:100%;
+  overscroll-behavior-y:contain}
+
+  /* ================= 磨砂玻璃 + 图片边缘光漫射（G3） ================= */
+  /* 整体：不再是纯黑，而是一层极薄的深色玻璃，颜色来自下方光斑 */
+  html[data-theme=""]{--bg:#102a38;}
+     iOS 上它把渐变画在"含地址栏的视口坐标系"里，地址栏/工具栏那两块落在渐变范围外
+     → 露出浏览器默认白。播放页用的是纯色背景，所以没有这个问题（对比定位）。
+     页面本身 overflow:hidden 不滚动，这个 fixed 毫无必要。 */
+  /* req-nightteal：底色围绕 #102a38 做很轻的上下变化 */
+  body{background:linear-gradient(170deg,#143544 0%,#102a38 55%,#0a2029 100%);}
+  /* 发光层：铺满整个 .app，位于所有内容之下；侧栏/顶栏/卡片都用 backdrop-filter 吃它的光 */
+  /* req-glow4：光斑层改为**滚动内容坐标系**（跟着内容滚，滚动时无需 JS 重算） */
+  .glowlayer{position:absolute;left:0;top:0;width:0;height:0;z-index:-1;pointer-events:none;}
+    /* ★ 这里**不能**给 .app 加 position、也不能给 .side/.main 加 position+z-index：
+     那会破坏原本的 flex 布局（手机端表现：内容被挤到右侧、左边一大片空白、顶栏错位）。
+     光斑层用 z-index:-1 就够——普通 static 内容天然画在它上面。
+     req-glow4 例外：**只有滚动容器 #body 加了 position:relative**（光斑层要以它为包含块，
+     跟随内容滚动、滚动时不再重算）。改这条时必须复测手机端布局。 */
+  /* ★ 侧栏：磨砂玻璃 + 右侧发光边（能看到光从下面透上来） */
+  html body .side{background:linear-gradient(180deg,var(--glass-a),var(--glass-b)) !important;
+    -webkit-backdrop-filter:blur(30px) saturate(1.4);backdrop-filter:blur(30px) saturate(1.4);
+    border-right:1px solid var(--glass-line) !important;
+    box-shadow:inset -1px 0 0 var(--glass-hi), 8px 0 30px var(--glass-sh);}
+  /* ★ 顶栏：同样磨砂 */
+  html body .top{background:linear-gradient(180deg,var(--glass-a),var(--glass-b)) !important;
+    -webkit-backdrop-filter:blur(26px) saturate(1.35);backdrop-filter:blur(26px) saturate(1.35);
+    border-bottom:1px solid var(--glass-line) !important;
+    box-shadow:0 6px 24px var(--glass-sh);}
+  /* 内容区透明，让光露出来 */
+  .body{background:transparent !important;}
+
+  /* ★ 卡片：磨砂玻璃，但保留清晰边界（描边 + 内高光 + 投影） */
+  html body .card, html body .fcard{background:var(--glass-a) !important;
+    -webkit-backdrop-filter:blur(20px) saturate(1.3);backdrop-filter:blur(20px) saturate(1.3);
+    border:1px solid var(--glass-card-line) !important;
+    box-shadow:inset 0 1px 0 var(--glass-card-hi), var(--glass-card-sh) !important;}
+  .card:hover,.fcard:hover{background:var(--glass-hover) !important;
+    border-color:var(--glass-line) !important;}
+
+  /* 手机：抽屉侧栏收窄，并加磨砂（同一组玻璃 token） */
+  @media(max-width:880px){
+    .side{width:50vw !important;max-width:50vw !important;
+      background:linear-gradient(180deg,var(--glass-a),var(--glass-b)) !important;
+      -webkit-backdrop-filter:blur(30px) saturate(1.3);backdrop-filter:blur(30px) saturate(1.3);}
+  }
+
+/* ============ req-glow4：卡片发光 ============
+     目标：光更柔、**只发到"与相邻卡片相遇"的距离**、四周等距、卡形保留，且相邻卡片的光互相叠加融合。
+     做法：每张卡 1 个 div（与卡片同尺寸同圆角、本体透明），只靠**三层 box-shadow**往外衰减：
+       L1 近边强（blur .28g）→ L2 中段（.55g）→ L3 外圈弱（.80g，+spread 后总延伸 ≈ 卡片间距 g）
+     颜色 = 该图**边缘像素平均色**（JS 写入 --glow-c），距离 g = 网格间距（JS 写 --gw，实测 13px）。 */
+  /* ★ req-glowboost：加强发散距离与强度（用户要求）。
+     --gw = 网格间距（JS 写，实测 13px）；--gr = 发散倍率（默认 2.2，约 28.6px，
+     能越过一张卡的间距、与邻卡的光连成片；原来锁死在 1g≈13px）。
+     强度：四层 alpha .98 / .72 / .42 / .20（原 .95/.50/.24/.10）。
+     想更弱就改 --gr（1 = 回到定稿距离）与下面几个 alpha，零性能代价。 */
+  .glowcard{position:absolute;pointer-events:none;z-index:-1;background:none;
+    --gr:1.45;
+    transition:box-shadow .35s ease, transform .15s ease;
+    box-shadow:
+      0 0 calc(var(--gw) * .20 * var(--gr)) calc(var(--gw) * .10 * var(--gr)) rgba(var(--glow-c), .98),
+      0 0 calc(var(--gw) * .55 * var(--gr)) calc(var(--gw) * .20 * var(--gr)) rgba(var(--glow-c), .72),
+      0 0 calc(var(--gw) * 1.15 * var(--gr)) calc(var(--gw) * .36 * var(--gr)) rgba(var(--glow-c), .42),
+      0 0 calc(var(--gw) * 2.20 * var(--gr)) calc(var(--gw) * .70 * var(--gr)) rgba(var(--glow-c), .20);}
+  html[data-theme="light"] .glowcard{
+    box-shadow:
+      0 0 calc(var(--gw) * .20 * var(--gr)) calc(var(--gw) * .10 * var(--gr)) rgba(var(--glow-c), .78),
+      0 0 calc(var(--gw) * .55 * var(--gr)) calc(var(--gw) * .20 * var(--gr)) rgba(var(--glow-c), .54),
+      0 0 calc(var(--gw) * 1.15 * var(--gr)) calc(var(--gw) * .36 * var(--gr)) rgba(var(--glow-c), .30),
+      0 0 calc(var(--gw) * 2.20 * var(--gr)) calc(var(--gw) * .70 * var(--gr)) rgba(var(--glow-c), .14);}
+  /* 弱机（lowfx）：距离与强度各降一档，别让模糊层累积掉帧 */
+  body.lowfx .glowcard{--gr:1.10;opacity:.86}
+  body.nofx .glowlayer{display:none}
+  body.nofx .card,body.nofx .fcard,body.nofx .side,body.nofx .top{
+    -webkit-backdrop-filter:none;backdrop-filter:none;}
+</style>
+<script>
+/* iOS 会忽略 user-scalable=no，这里再拦一层系统捏合手势（只拦页面缩放，不影响页面内 JS 手势） */
+(function(){['gesturestart','gesturechange','gestureend'].forEach(function(ev){
+  document.addEventListener(ev,function(e){e.preventDefault();},{passive:false});});})();
+</script>
+</head>
+<body>
+<div class="app">
+  <div class="scrim" id="scrim"></div>
+
+  <!-- 侧栏：库 + 目录树 -->
+  <aside class="side" id="side">
+    <div class="brand" id="brandHome" style="cursor:pointer" title="回到随机发现">
+      <div class="logo">115</div>
+      <div><b>115emby</b><small>目录驱动媒体库</small></div>
+    </div>
+
+    <div class="libs" id="libs">
+      <button data-lib="discover" class="on" title="随机发现：从全库随机抽目录展示">
+        <svg viewBox="0 0 24 24"><path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.4l-1.9-5.6L4.5 10.9 10.1 9z"/></svg>随机发现
+      </button>
+      <button data-lib="images">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.5"/><path d="m4 18 5.5-5 4 3.6 3-2.6L20 17"/></svg>全部图片
+      </button>
+      <button data-lib="videos">
+        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M10 9.5v5l4.5-2.5z"/></svg>全部视频
+      </button>
+      <button data-lib="recent">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>最近添加
+      </button>
+      <button data-lib="fav" title="我的收藏：收藏过的图片与视频">
+        <svg viewBox="0 0 24 24"><path d="M12 4.3l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 10l5.4-.8z"/></svg>我的收藏
+      </button>
+      <button data-lib="search" title="全库搜索：按名字搜索目录与文件">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>全库搜索
+      </button>
+    </div>
+
+    <div class="secttl">
+      <span>目录</span><span class="grow"></span>
+      <button id="collapseAll" title="全部收起">收起</button>
+    </div>
+
+    <div class="tree" id="tree"></div>
+
+    <div class="sidefoot">
+      <div><span class="k">视频数</span><b id="sf-videos">—</b></div>
+      <div><span class="k">图片数</span><b id="sf-images">—</b></div>
+      <div><span class="k">目录数</span><b id="sf-folders">—</b></div>
+      <div><span class="k">库容量</span><b id="sf-size">—</b></div>
+    </div>
+  </aside>
+
+  <!-- 主区 -->
+  <div class="main">
+    <div class="top">
+      <button class="drawer" id="drawerBtn" title="打开目录导航" aria-label="打开目录导航"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <div class="crumbs" id="crumbs"></div>
+      <!-- req-topsel：类型筛选与排序都改成站点风格的自定义下拉（id 保持，兼容结构校验） -->
+      <div class="dsel" id="chips" data-value="all" tabindex="0" role="button"
+           aria-haspopup="listbox" aria-expanded="false" aria-label="类型筛选">
+        <button class="dsel-b" type="button"><span class="dsel-v">全部</span>
+          <svg class="dsel-c" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        <div class="dsel-menu" role="listbox">
+          <button type="button" data-v="all" role="option">全部</button>
+          <button type="button" data-v="image" role="option">图片</button>
+          <button type="button" data-v="video" role="option">视频</button>
+        </div>
+      </div>
+      <div class="dsel" id="sort" data-value="mtime" tabindex="0" role="button"
+           aria-haspopup="listbox" aria-expanded="false" aria-label="排序">
+        <button class="dsel-b" type="button"><span class="dsel-v">最新</span>
+          <svg class="dsel-c" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        <div class="dsel-menu" role="listbox">
+          <button type="button" data-v="mtime" role="option">最新</button>
+          <button type="button" data-v="name" role="option">名称</button>
+          <button type="button" data-v="size" role="option">大小</button>
+        </div>
+      </div>
+      <!-- req-topsel：回到顶部 -->
+      <button class="iconbtn" id="toTop" title="回到顶部" aria-label="回到顶部">
+        <svg viewBox="0 0 24 24"><path d="M12 19V6M6 12l6-6 6 6"/></svg></button>
+      <button class="iconbtn" id="theme" title="明暗"><svg viewBox="0 0 24 24">
+        <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/>
+        <circle cx="12" cy="12" r="3.5"/></svg></button>
+    </div>
+
+    <div class="body" id="body">
+    <div class="glowlayer" id="glowlayer" aria-hidden="true"></div></div>
+    <div id="sbar"><i id="sthumb"></i></div>
+  </div>
+</div>
+
+<!-- 灯箱 -->
+<div id="lb">
+  <div id="lbTop">
+    <span id="lbName"></span><span id="lbIdx"></span>
+    <button id="lbFull" title="全屏 (F)"><svg viewBox="0 0 24 24">
+      <path d="M4 9V4h5M20 15v5h-5M15 4h5v5M9 20H4v-5"/></svg></button>
+    <button id="lbClose" title="关闭 (Esc)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div id="lbStage"><div id="lbRot"><img id="lbImg" alt=""></div></div>
+  <div id="lbBar">
+    <span id="lbInfo"></span>
+    <button id="lbPrev">‹ 上一项</button>
+    <button id="lbNext">下一项 ›</button>
+  </div>
+</div>
+
+
+<script>
+/* ============ 真实数据层（/browse2） ============ */
+const $ = s => document.querySelector(s);
+const qs = new URLSearchParams(location.search);
+
+let S = {
+  lib: qs.get('lib') || 'discover',      // discover | images | videos | recent | dir
+  dir: qs.get('parent') || '',
+  kind: qs.get('kind') || 'all',
+  mode: qs.get('mode') || 'grid',
+  sort: qs.get('sort') || 'mtime',
+  q: qs.get('q') || '',
+  offset: 0, hasMore: false, loading: false, quiet: false,
+    /* req-back2discover：从「随机发现」进入目录时记下来源（kind/seed），
+       目录页据此显示「← 返回发现」，并能回到同一批、同一位置 */
+    fromDiscover: null,
+    /* req-back2search：从「全库搜索」进目录时记下查询词与筛选，目录页显示「← 返回搜索」 */
+    fromSearch: null,
+    /* req-fav：从「我的收藏」进目录时记下来源，目录页显示「← 返回收藏」 */
+    fromFav: null,
+  /* req2567-seed：随机发现 seed 的取值优先级
+     · 同一会话内导航（从播放页返回）：用 URL 的 seed，保证列表一致
+     · 新开浏览器/新会话：用 localStorage 里"上次关浏览器前最后浏览那批"
+     bug 原因：URL 的 seed 永远优先，而 setUrl() 用 replaceState 把 seed 写进地址栏，
+     浏览器恢复会话时又打开那个 URL → 永远是同一批。 */
+  seed: (function(){
+    const fromUrl = qs.get('seed') || '';
+    const stored = localStorage.getItem('b2seed') || '';
+    const sameSession = sessionStorage.getItem('b2session') === '1';
+    if(!sameSession && stored) return stored;
+    return fromUrl || stored;
+  })(),
+};
+try{ sessionStorage.setItem('b2session', '1'); }catch(e){}
+if(!S.seed){ S.seed = String(Math.floor(Math.random() * 1e9)); }
+try{ localStorage.setItem('b2seed', S.seed); }catch(e){}
+
+/* ===== req5-frscroll：按目录记住文件夹横向滚动位置 =====
+   repaint() 会重建 .frow（scrollLeft 归零），所以必须在切换目录前存、
+   重建后恢复。key 用目录 id（根/随机发现用空串）。 */
+const FR_SCROLL = (() => {
+  try{ return JSON.parse(sessionStorage.getItem('b2frscroll') || '{}') || {}; }catch(e){ return {}; }
+})();
+function frKey(){ return (S.lib || '') + '|' + (S.dir || ''); }
+function saveFrScroll(){
+  const fr = document.querySelector('#body .frow');
+  if(fr) FR_SCROLL[frKey()] = fr.scrollLeft || 0;
+  try{ sessionStorage.setItem('b2frscroll', JSON.stringify(FR_SCROLL)); }catch(e){}
+}
+function restoreFrScroll(){
+  const fr = document.querySelector('#body .frow');
+  if(!fr) return;
+  const x = FR_SCROLL[frKey()] || 0;
+  if(x > 0) fr.scrollLeft = x;
+}
+
+let currentList = [];      // 灯箱用
+let LB = 0;
+const openSet = new Set();
+let treeData = null;
+
+/* 目录名缓存（localStorage）：从播放页返回时先把名字画出来，
+   避免"目录空白几秒 → 右侧按钮跟着位移" */
+const NAME_CACHE = (() => {
+  try{ return JSON.parse(localStorage.getItem('b2names') || '{}') || {}; }catch(e){ return {}; }
+})();
+function cacheName(id, name){
+  if(!id || !name || NAME_CACHE[id] === name) return;
+  NAME_CACHE[id] = name;
+  try{ localStorage.setItem('b2names', JSON.stringify(NAME_CACHE)); }catch(e){}
+}
+function cachedName(id){ return (id && NAME_CACHE[id]) || ''; }
+
+/* 目录树缓存：返回列表时侧栏不该再等 /api/tree（实测慢时 1.7s） */
+function saveTree(){
+  try{ sessionStorage.setItem('b2tree', JSON.stringify({at: Date.now(), data: treeData})); }catch(e){}
+}
+function loadTreeCache(){
+  try{
+    const j = JSON.parse(sessionStorage.getItem('b2tree') || 'null');
+    if(j && j.data && j.data.nodes && Date.now() - (j.at || 0) < 10 * 60 * 1000){
+      treeData = j.data; return true;
+    }
+  }catch(e){}
+  return false;
+}
+
+/* 顶栏标题：目录名只显示前 4 个字（完整名字放 tooltip） */
+const LIB_TITLE = {discover:'随机发现', images:'全部图片', videos:'全部视频',
+                   recent:'最近添加', search:'全库搜索', fav:'我的收藏'};
+function shortName(name, n){
+  const s = name || '';
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+/* 返回时恢复滚动位置：把当前视图状态存 sessionStorage */
+/* ---------------------------------------------------------------
+   列表快照：点卡片进播放页时，把当前这批卡片数据存进 sessionStorage。
+   返回列表时**同步**画出来 → 一次网络请求都不用发，首屏立刻有内容；
+   这是"返回要 1.4 秒"里最大的一块（导航 + /api/browse + 渲染）。
+   --------------------------------------------------------------- */
+function snapKey(){
+  return JSON.stringify([S.lib, S.lib === 'dir' ? S.dir : '', S.kind, S.sort, S.seed, S.q, S.mode]);
+}
+const RETURN_TTL = 12 * 60 * 60 * 1000;
+/* ★ req-backsnap：快照按**视图**各存一份（键 = snapKey()）。
+   以前只有一个槽位 'b2snap'，而 pagehide 时也会 saveSnap() ——
+   于是"从随机发现跳进目录"后，只要在目录里触发过一次 pagehide
+   （手机上切后台/进 bfcache 就会触发），发现页那一屏就被目录状态覆盖，
+   点「返回发现」时键失配 → 只能重新 load → **跳回顶部**（用户报的"不是刚才卡片的位置了"）。
+   改成按视图存后，各视图的快照互不覆盖。 */
+const SNAP_ALL = 'b2snaps';
+const SNAP_MAX = 6;                    /* 最多留 6 个视图，防 sessionStorage 膨胀 */
+function snapMetaFor(key){
+  try{
+    const all = JSON.parse(sessionStorage.getItem(SNAP_ALL) || '{}') || {};
+    const j = all[key];
+    if(!j || j.version !== 3 || !Array.isArray(j.items)) return null;
+    if(Date.now() - (j.at || 0) > RETURN_TTL) return null;
+    return j;
+  }catch(e){ return null; }
+}
+function saveSnap(){
+  if(S._loadedKey !== snapKey()) return;
+  try{
+    let all = {};
+    try{ all = JSON.parse(sessionStorage.getItem(SNAP_ALL) || '{}') || {}; }catch(e){ all = {}; }
+    all[snapKey()] = {
+      version: 3, at: Date.now(),
+      items: currentList,
+      loaded: currentList.length,
+      total: S._total || 0, offset: S._committedOffset || 0,
+      folders: S._folders || [], previews: S._previews || {},
+      hasMore: S.hasMore, parentId: S.parentId ?? null,
+      discover: S._discover || {}, search: S._search || {},
+      scrollTop: ($('#body') || {}).scrollTop || 0,
+      /* req2567-scrollleft：文件夹横向滚动位置也要存，否则从子目录返回会回到最左边 */
+      scrollLeft: (($('#body') || {}).querySelector('.frow') || {}).scrollLeft || 0,
+    };
+    const ks = Object.keys(all).sort((a, b) => (all[b].at || 0) - (all[a].at || 0));
+    ks.slice(SNAP_MAX).forEach(k => { delete all[k]; });
+    sessionStorage.setItem(SNAP_ALL, JSON.stringify(all));
+  }catch(e){
+    try{ sessionStorage.removeItem(SNAP_ALL); }catch(e2){}      /* 配额满：清光，不影响主流程 */
+  }
+}
+function loadSnap(){
+  if(/[?&]nosnap=1/.test(location.search)) return false;   // 诊断用：强制走正常加载
+  const j = snapMetaFor(snapKey());
+  if(!j) return false;
+  currentList = j.items;
+  S._total = j.total || 0; S._folders = j.folders || []; S._previews = j.previews || {};
+  S.offset = j.offset || 0;
+  S.hasMore = !!j.hasMore; S.parentId = j.parentId ?? null;
+  S._discover = j.discover || {}; S._search = j.search || {};
+  S._loadedKey = snapKey(); S._committedOffset = S.offset;
+  S._snapScroll = j.scrollTop || 0;
+  S._snapScrollLeft = j.scrollLeft || 0;      /* req2567-scrollleft */
+  window.__snap = {items: currentList.length, total: S._total, hasMore: S.hasMore,
+                   age: Math.round((Date.now() - (j.at || 0)) / 1000)};
+  return true;
+}
+function dropSnap(){ try{ sessionStorage.removeItem(SNAP_ALL); }catch(e){} }
+
+function saveRestore(){
+  if(S._loadedKey !== snapKey()) return;
+  try{
+    sessionStorage.setItem('b2restore', JSON.stringify({
+      lib: S.lib, dir: S.dir, kind: S.kind, mode: S.mode, sort: S.sort,
+      seed: S.seed, q: S.q || '',
+      scrollTop: ($('#body') || {}).scrollTop || 0,
+      scrollLeft: (($('#body') || {}).querySelector('.frow') || {}).scrollLeft || 0,
+      loaded: currentList.length,
+      at: Date.now(),
+    }));
+  }catch(e){}
+}
+
+const VIDEO_EXT = ['mp4','m4v','webm','mov'];
+const NO_PLAY = ['mkv','avi','rmvb','rm','ts','m2ts','flv','wmv'];
+
+/* 缩略图：和图片一样直接加载；真失败就让卡片背景露出来，不显示任何文字 */
+/* 兼容旧调用：现在真正取图在 bindAllThumbs 的队列里（见下方） */
+function bindThumb(img, id){ img.dataset.thumb = img.dataset.thumb || id; }
+
+function human(n){
+  if(!n) return '';
+  const u = ['B','KB','MB','GB','TB']; let i = 0, v = n;
+  while(v >= 1024 && i < u.length - 1){ v /= 1024; i++; }
+  return (v >= 10 || i === 0 ? Math.round(v) : v.toFixed(1)) + u[i];
+}
+
+/* req-libsize：库大小 = 图片+视频原始文件总和
+   · < 1T  → 整数 G（如 8536G）
+   · ≥ 1T  → 一位小数 T（如 12.9T）
+   进制用 1024，与界面其它大小显示（human）保持一致 */
+function fmtLibSize(bytes){
+  const b = Number(bytes) || 0;
+  const g = b / 1073741824;
+  if(!(g > 0)) return '—';
+  return g < 1024 ? Math.round(g) + 'G' : (g / 1024).toFixed(1) + 'T';
+}
+/* req-libsize：手机侧栏窄（360px 屏只有 180px），四位以上数字会把两列挤到折行
+   → ≥ 1万 用「万」缩写（44,903 → 4.5万），1万以下保留千分位（6,096） */
+function fmtCount(n){
+  const v = Number(n) || 0;
+  return v >= 10000 ? (v / 10000).toFixed(1) + '万' : v.toLocaleString();
+}
+function fmtDate(t){
+  if(!t) return '';
+
+  const d = new Date(t * 1000);
+  const p = x => String(x).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+function fmtDur(sec){
+  if(!sec) return '';
+  sec = Math.round(sec);
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return (m >= 60 ? Math.floor(m / 60) + ':' + String(m % 60).padStart(2,'0') : m) + ':' + String(s).padStart(2, '0');
+}
+function extOf(name){ return (name || '').split('.').pop().toLowerCase(); }
+function escapeHTML(value){
+  return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+}
+
+async function api(path, options = {}){
+  const r = await fetch(path, {cache: 'no-store', ...options});
+  if(!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+function setUrl(){
+  const p = new URLSearchParams();
+  p.set('lib', S.lib);
+  if(S.lib === 'dir' && S.dir) p.set('parent', S.dir);
+  if(S.kind !== 'all') p.set('kind', S.kind);
+  if(S.mode !== 'grid') p.set('mode', S.mode);
+  if(S.sort !== 'mtime') p.set('sort', S.sort);
+  if(S.lib === 'discover') p.set('seed', S.seed);
+  if(S.q) p.set('q', S.q);
+  // file:// 打开时 replaceState 会抛 SecurityError，不能让它挡住渲染
+  try{ history.replaceState(null, '', '/browse2?' + p.toString()); }catch(e){}
+}
+
+/* ---------------- 侧栏统计 ---------------- */
+(async () => {
+  try{
+    const h = await api('/api/health');
+    const L = h.library || {};
+      const put = (id, v) => { const e = document.getElementById(id); if(e) e.textContent = v; };
+      put('sf-videos', fmtCount(L.videos));
+      put('sf-images', fmtCount(L.images));
+      put('sf-folders', fmtCount(L.folders));
+      put('sf-size', fmtLibSize(L.media_bytes));
+  }catch(e){}
+})();
+
+/* ---------------- 目录树 ---------------- */
+function treeIcon(){
+  return '<svg viewBox="0 0 24 24"><path d="M3 7.5A2 2 0 0 1 5 5.5h4l2 2.5h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+}
+function renderTree(){
+  const host = $('#tree');
+  if(!treeData){ host.innerHTML = '<div style="color:#5f6a7d;font-size:12px;padding:8px">载入目录…</div>'; return; }
+  const nodes = treeData.nodes || [];
+  const build = (node) => {
+    const hasKids = (node.folders || 0) > 0;
+    const wrap = document.createElement('div');
+    wrap.className = 'node';
+    const row = document.createElement('div');
+    row.className = 'row' + (S.lib === 'dir' && S.dir === node.id ? ' on' : '');
+    row.dataset.dir = node.id;
+    const cnt = (node.folders || 0) + (node.media || 0);
+    row.innerHTML = '<span class="tw ' + (hasKids ? (openSet.has(node.id) ? 'open' : '') : 'leaf') + '">▶</span>' +
+      '<span class="ic">' + treeIcon() + '</span>' +
+      '<span class="nm"></span><span class="ct">' + cnt + '</span>';
+    row.querySelector('.nm').textContent = node.name || node.id;
+    wrap.appendChild(row);
+    if(hasKids){
+      const kids = document.createElement('div');
+      kids.className = 'kids' + (openSet.has(node.id) ? ' open' : '');
+      kids.dataset.kids = node.id;
+      (node.children || []).forEach(c => kids.appendChild(build(c)));
+      wrap.appendChild(kids);
+    }
+    return wrap;
+  };
+  host.innerHTML = '';
+  nodes.forEach(n => host.appendChild(build(n)));
+  /* ★ req-marquee：侧边栏目录名太长时滚动显示。
+     ⛔ 树是单独渲染的（不在 #body 里），所以必须在这里再扫一次 ——
+       只在 repaint() 里扫的话侧边栏永远不参与。 */
+  marqueeScan(host);
+  /* 展开/折叠会改变可见宽度 → 延迟补扫一次（等 CSS 过渡结束） */
+  clearTimeout(window.__mqTreeTimer);
+  window.__mqTreeTimer = setTimeout(() => marqueeScan(host), 260);
+}
+
+$('#tree').addEventListener('click', async e => {
+  const tw = e.target.closest('.tw');
+  const row = e.target.closest('.row');
+  if(!row) return;
+  const id = row.dataset.dir;
+  if(tw && !tw.classList.contains('leaf')){
+    if(openSet.has(id)){
+      openSet.delete(id);
+    }else{
+      openSet.add(id);
+      const node = findNode((treeData && treeData.nodes) || [], id);
+      if(node && !node.children){
+        try{
+          const sub = await api('/api/tree?root=' + encodeURIComponent(id) + '&depth=1');
+          node.children = sub.nodes || [];
+        }catch(err){ node.children = []; }
+      }
+    }
+    renderTree();
+    /* ★ req-marquee：展开后节点才可见、才有宽度，必须再扫一次 */
+    setTimeout(() => marqueeScan(document.querySelector('#tree')), 260);
+    return;
+  }
+  saveFrScroll();                               /* req5-frscroll */
+    /* ★ 从目录树进入：不显示「返回发现」，类型筛选复位成全部
+       （req-back2discover / req-dir-all） */
+    S.fromDiscover = null; S.fromSearch = null;
+    if(S.lib !== 'dir') S.kind = 'all';
+    syncChips();                               /* 顶栏 chip 同步 */
+  S.lib = 'dir'; S.dir = id; S.offset = 0; S.q = '';
+  cacheName(id, (row.querySelector('.nm') || {}).textContent || '');
+  if(!openSet.has(id)) openSet.add(id);
+  renderTree(); syncLibs(); load();
+  closeDrawer();
+});
+
+function treeCount(id){
+  const n = findNode((treeData && treeData.nodes) || [], id);
+  return n ? ((n.media || 0) + (n.folders || 0)) : '';
+}
+
+function findNode(nodes, id){
+  for(const n of (nodes || [])){
+    if(n.id === id) return n;
+    const hit = findNode(n.children, id);
+    if(hit) return hit;
+  }
+  return null;
+}
+
+$('#collapseAll').addEventListener('click', () => { openSet.clear(); renderTree(); });
+$('#brandHome').addEventListener('click', () => { saveFrScroll(); /* req5-libhook */ S.lib = 'discover'; S.dir = ''; S.offset = 0; syncLibs(); renderTree(); load(); closeDrawer(); });
+
+function syncLibs(){
+  document.querySelectorAll('#libs button').forEach(b => {
+    const want = b.dataset.lib === 'home' ? 'discover' : b.dataset.lib;
+    b.classList.toggle('on', want === S.lib);
+  });
+}
+
+  /* ★ 进目录统一入口（req-back2discover + req-dir-all）
+     · 从「随机发现」进来 → 记下来源（kind/seed），目录页显示「← 返回发现」
+     · 其它来源进来 → 清掉来源（目录树/搜索进目录不显示该按钮）
+     · 跨视图进目录（非 dir → dir）一律把类型筛选复位成"全部"：
+       否则从「发现图片 / 发现视频」点进目录会只显示图片或视频
+     · 进入前先 saveSnap()：返回发现时能原样铺回那一屏（含滚动位置，零请求） */
+  /* ★ req-topsel：顶栏自定义下拉组件（替原生 select，风格与站点一致）
+     · 点按钮展开/收起；点选项即选中
+     · 键盘：Enter/Space 开合、↑↓ 移动高亮、Enter 选中、Esc 关闭
+     · 点页面其它地方自动收起（按钮与选项都 stopPropagation） */
+  function dselInit(el, onPick){
+    if(!el) return null;
+    const btn = el.querySelector('.dsel-b');
+    const menu = el.querySelector('.dsel-menu');
+    if(!btn || !menu) return null;
+    const label = el.querySelector('.dsel-v');
+    const opts = () => [...menu.querySelectorAll('[data-v]')];
+    const api = {
+      get value(){ return el.dataset.value || ''; },
+      set(v, silent){
+        el.dataset.value = v;
+        let hit = null;
+        opts().forEach(x => { const on = (x.dataset.v === v); x.classList.toggle('on', on); if(on) hit = x; });
+        if(label) label.textContent = hit ? hit.textContent.trim() : v;
+        if(!silent && onPick) onPick(v);
+      },
+      open(){
+        document.querySelectorAll('.dsel.on').forEach(x => x.classList.remove('on'));
+        el.classList.add('on');
+        btn.setAttribute('aria-expanded', 'true');
+        const cur = menu.querySelector('[data-v].on') || opts()[0];
+        opts().forEach(x => x.classList.toggle('hl', x === cur));
+      },
+      close(){
+        el.classList.remove('on');
+        btn.setAttribute('aria-expanded', 'false');
+        opts().forEach(x => x.classList.remove('hl'));
+      }
+    };
+    btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      el.classList.contains('on') ? api.close() : api.open();
+    });
+    menu.addEventListener('click', ev => {
+      const o = ev.target.closest('[data-v]');
+      if(!o) return;
+      ev.stopPropagation();
+      api.set(o.dataset.v); api.close(); btn.focus();
+    });
+    el.addEventListener('keydown', ev => {
+      const os = opts();
+      if(ev.key === 'Escape'){ api.close(); btn.focus(); return; }
+      if(ev.key === 'Enter' || ev.key === ' '){
+        ev.preventDefault();
+        if(!el.classList.contains('on')){ api.open(); return; }
+        const cur = menu.querySelector('[data-v].hl') || menu.querySelector('[data-v].on') || os[0];
+        if(cur){ api.set(cur.dataset.v); api.close(); btn.focus(); }
+        return;
+      }
+      if(ev.key === 'ArrowDown' || ev.key === 'ArrowUp'){
+        ev.preventDefault();
+        if(!el.classList.contains('on')){ api.open(); return; }
+        let i = os.findIndex(x => x.classList.contains('hl'));
+        if(i < 0) i = os.findIndex(x => x.classList.contains('on'));
+        i = (ev.key === 'ArrowDown') ? Math.min(os.length - 1, i + 1) : Math.max(0, i - 1);
+        os.forEach((x, k) => x.classList.toggle('hl', k === i));
+      }
+    });
+    document.addEventListener('click', () => api.close());
+    el.__dsel = true;
+    return api;
+  }
+  let kindSel = null, sortSel = null;
+
+  /* ★ 顶栏类型/排序是静态元素（不在 #body 里，repaint 不重建它）。
+     重置/恢复 S.kind / S.sort 后必须手动同步，否则会出现
+     "内容已经是全部、下拉却还显示图片选中"。 */
+  function syncChips(){
+    if(kindSel) kindSel.set(S.kind || 'all', true);
+  }
+
+  function enterDir(id, name){
+    saveFrScroll();                             /* req5-frscroll：离开前记住当前目录的横向位置 */
+    saveSnap();                                 /* req-back2discover：先存下"发现"那一屏 */
+    if(S.lib === 'discover'){ S.fromDiscover = {kind: S.kind, seed: S.seed};
+                              S.fromSearch = null; S.fromFav = null; }
+    else if(S.lib === 'search'){ S.fromSearch = {q: S.q, kind: S.kind};
+                                 S.fromDiscover = null; S.fromFav = null; }
+    else if(S.lib === 'fav'){ S.fromFav = {kind: S.kind};
+                              S.fromDiscover = null; S.fromSearch = null; }
+    else if(S.lib !== 'dir'){ S.fromDiscover = null; S.fromSearch = null; S.fromFav = null; }
+    if(S.lib !== 'dir') S.kind = 'all';         /* req-dir-all */
+    syncChips();                                /* 顶栏 chip 同步（静态元素） */
+    if(name) cacheName(id, name);
+    S.lib = 'dir'; S.dir = id; S.offset = 0; S.q = '';
+    openSet.add(id);
+    renderTree(); syncLibs(); load();
+  }
+$('#libs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-lib]');
+  if(!b) return;
+  saveFrScroll();                          /* req5-libhook */
+  S.lib = b.dataset.lib === 'home' ? 'discover' : b.dataset.lib;
+  S.offset = 0;
+  if(S.lib !== 'search') S.q = '';        // 离开搜索视图就清掉查询词
+  syncLibs(); renderTree(); paintCrumb(); load(); closeDrawer();
+});
+
+/* ---------------- 渲染 ---------------- */
+function cardHTML(it){
+  const isV = it.kind === 'video';
+  // 编码角标：只标"是什么编码"，不替用户判"能不能播"——
+  // 能不能播取决于设备（HEVC 在 iPhone 上能播、在 Chrome 上要 115 转码），
+  // 之前这里写"需外部播放"经常与实际不符。
+  let codecBadge = '';
+  if(isV && it.playable_codec === false && it.codec_label){
+    const hevc = (it.vcodec === 'hevc' || it.vcodec === 'h265');
+    codecBadge = '<span class="cbadge' + (hevc ? ' hevc' : '') + '" title="' +
+      escapeHTML(it.codec_note) + '">' + escapeHTML(it.codec_label.replace(/ \/ .*/, '')) + '</span>';
+  }
+  // "跳到所在目录"：只有跨目录的列表（随机发现/搜索结果）才给（它们带 folder 字段）
+  const goto = it.folder && it.parent_id
+    ? '<button class="fbtn" data-goto="' + escapeHTML(it.parent_id) + '" data-gname="' +
+      escapeHTML(it.folder) + '" title="跳到所在目录：' + escapeHTML(it.folder) + '">' +
+      '<svg viewBox="0 0 24 24"><path d="M3 7.5A2 2 0 0 1 5 5.5h4l2 2.5h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>'
+    : '';
+  return '<div class="card" tabindex="0" role="button" data-media="' + escapeHTML(it.id) + '">' +
+    '<div class="ph">' +
+      '<img alt="" data-thumb="' + encodeURIComponent(it.id) + '" ' +
+        'style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">' +
+      (isV ? '<span class="badge"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>视频</span>' : '') +
+      codecBadge +
+    '</div>' +
+    '<div class="meta"><b></b><span>' + human(it.size) + ' · ' + fmtDate(it.mtime) +
+      (it.folder ? ' · 📁' + escapeHTML(it.folder) : '') + '</span></div>' +
+    // ★ 图标放在**卡片**里（不是图片容器里）：只有相对卡片定位，才能真的落在右下角、
+    //   也就是渐变过渡的那一带；放在 .ph 里时它的 bottom 是相对"正方形图片"算的。
+    goto +
+    '</div>';
+}
+
+function folderCardHTML(f, previews){
+  const ids = (previews && previews[f.id]) || [];
+  /* ★ req-coverfit：按张数选网格，保证**每张都铺满自己的格子**、整体铺满封面区 */
+  const n = Math.min(ids.length, 4);
+  const cls = n <= 1 ? 'single' : n === 2 ? 'two' : ('three' + (n === 3 ? ' n3' : ''));
+  const quads = ids.slice(0, 4).map(id =>
+    '<div class="q"><img alt="" data-thumb="' + encodeURIComponent(id) + '"></div>').join('');
+  const empty = '<div class="q" style="background:linear-gradient(135deg,#20293a,#33405c)"></div>';
+  return '<div class="fcard" tabindex="0" role="button" data-folder="' + escapeHTML(f.id) + '">' +
+    '<div class="cv ' + cls + '">' + (quads || empty) +
+      (f.n ? '<span class="ct">' + escapeHTML(f.n) + ' 项</span>' : '') + '</div>' +
+    '<div class="nm">' + treeIcon() + '<span></span></div></div>';
+}
+
+function listHTML(folders, items){
+  const rowsF = folders.map(f =>
+    '<div class="lr" data-folder="' + escapeHTML(f.id) + '"><div class="nm"><i>📁</i><b></b></div>' +
+    '<div class="sz">' + (f.n || '') + '</div><div class="dt">' + fmtDate(f.mtime) + '</div><div class="arw">›</div></div>').join('');
+  return '<div class="list"><div class="lh"><span>名称</span><span>大小/数量</span><span>时间</span><span></span></div>' +
+    rowsF + mediaRows(items) + '</div>';
+}
+function mediaRows(items){
+  return items.map(it =>
+    '<div class="lr" data-media="' + escapeHTML(it.id) + '"><div class="nm"><i>' + (it.kind === 'video' ? '🎬' : '🖼️') +
+    '</i><b></b></div><div class="sz">' + human(it.size) + '</div><div class="dt">' + fmtDate(it.mtime) +
+    '</div><div class="arw">›</div></div>').join('');
+}
+
+/* 名称需要文本节点，避免 HTML 注入 */
+function fillNames(container){
+  const folders = new Map((S._folders || []).map(folder => [String(folder.id), folder]));
+  const items = new Map(currentList.map(item => [String(item.id), item]));
+  container.querySelectorAll('[data-folder]').forEach(el => {
+    const b = el.querySelector('.nm b, .nm span');
+    const folder = folders.get(el.dataset.folder);
+    if(b) b.textContent = folder ? folder.name || folder.id : el.dataset.fname || '';
+  });
+  container.querySelectorAll('[data-media]').forEach(el => {
+    const b = el.querySelector('.meta b, .nm b');
+    const item = items.get(el.dataset.media);
+    if(b) b.textContent = item ? item.name || item.id : el.dataset.mname || '';
+  });
+}
+
+/* 搜索输入：**不再边打边搜**（拼音输入法的确认键会被误当成"开始搜索"）。
+   只有两种方式触发：点"搜索"按钮、或键盘回车（且必须不在输入法组合中）。
+   重新渲染后把焦点/光标放回输入框末尾。 */
+function bindSearchInput(inp){
+  let composing = false;
+  const fire = () => {
+    const v = inp.value.trim();
+    if(v === (S.q || '')) { if(v) inp.blur(); return; }   // 没变化就不重查
+    S.q = v; S.offset = 0;
+    inp.blur();                                          // 收键盘，避免又误触
+    load();
+  };
+  const btn = document.querySelector('#sqgo');
+  if(btn) btn.addEventListener('click', e => { e.preventDefault(); fire(); });
+  inp.addEventListener('compositionstart', () => { composing = true; });
+  inp.addEventListener('compositionend', () => { composing = false; });
+  inp.addEventListener('keydown', e => {
+    if(e.key !== 'Enter') return;
+    if(composing || e.isComposing || e.keyCode === 229) return;   // 输入法确认键：忽略
+    e.preventDefault();
+    fire();
+  });
+}
+
+function paintCrumb(){
+  const host = $('#crumbs');
+  if(S.lib !== 'dir'){
+    host.innerHTML = '<b></b>';
+    host.querySelector('b').textContent = LIB_TITLE[S.lib] || '';
+    host.title = '';
+    return;
+  }
+  const nm = cachedName(S.dir);
+  host.innerHTML = '<b></b>';
+  const b = host.querySelector('b');
+  b.textContent = nm ? shortName(nm, 4) : '…';    // 有缓存直接出，没有也不留空白
+  host.title = nm || '';                          // 完整目录名看 tooltip
+}
+
+async function renderCrumbs(){
+  paintCrumb();
+  if(S.lib !== 'dir' || !S.dir || (cachedName(S.dir) && S.parentId !== null)) return;
+  const dir = S.dir;
+  try{
+    const j = await api('/api/folder/' + encodeURIComponent(dir));
+    const anc = j.ancestors || j.trail || [];
+    cacheName(dir, (anc[anc.length - 1] || {}).name || '');
+    if(S.lib === 'dir' && S.dir === dir){
+      S.parentId = anc.length > 1 ? anc[anc.length - 2].id : '';
+      const up = $('#body').querySelector('.up');
+      if(up){ up.dataset.up = S.parentId; up.removeAttribute('aria-disabled'); }
+      paintCrumb();
+    }
+  }catch(e){}
+}
+
+let listRequest = 0, listController = null;
+async function load(quiet = false){
+  const body = $('#body');
+  const key = snapKey(), request = ++listRequest;
+  if(listController) listController.abort();
+  const controller = listController = new AbortController();
+  const active = () => request === listRequest && key === snapKey();
+  const requestApi = path => api(path, {signal: controller.signal});
+  const view = {...S};
+  S.quiet = quiet;
+  const pagination = view.offset > 0 && S._loadedKey === key;
+  if(!pagination) view.offset = S.offset = 0;
+  S.loading = true;
+  setUrl(); paintCrumb();
+  if(!quiet && !pagination) body.innerHTML = '<div class="empty loading" role="status">正在加载媒体…</div>';
+  try{
+    let url;
+    if(view.lib === 'discover'){
+      /* req-per1：dirs=80 & per=1 —— 80 条来自 80 个**不同目录**，
+         不再出现同一目录 3 张连排。点「换一批」换 seed 就是全新 80 条。 */
+      url = '/api/discover?dirs=80&per=1&seed=' + encodeURIComponent(view.seed);
+      if(view.kind !== 'all') url += '&kind=' + encodeURIComponent(view.kind);
+    }else if(['images','videos','recent'].includes(view.lib)){
+      const kind = view.lib === 'recent' ? 'all' : view.lib === 'images' ? 'image' : 'video';
+      url = '/api/library?kind=' + kind + '&offset=' + view.offset + '&limit=60&order=' + encodeURIComponent(view.sort);
+    }else if(view.lib === 'fav'){
+      /* req-fav：我的收藏（带 folder/parent_id，卡片自带"跳到所在目录"） */
+      url = '/api/fav?kind=' + encodeURIComponent(view.kind || 'all') +
+        '&offset=' + view.offset + '&limit=60&order=' + encodeURIComponent(view.sort);
+    }else if(view.lib === 'search'){
+      if(view.q) url = '/api/search?q=' + encodeURIComponent(view.q) + '&limit=120' +
+        (view.kind !== 'all' ? '&kind=' + encodeURIComponent(view.kind) : '');
+    }else{
+      url = '/api/browse?parent=' + encodeURIComponent(view.dir) + '&limit=120&offset=' + view.offset +
+        '&order=' + encodeURIComponent(view.sort) +
+        (view.kind !== 'all' ? '&kind=' + encodeURIComponent(view.kind) : '');
+    }
+    const data = url ? await requestApi(url) : {items: []};
+    if(!active()) return false;
+    const items = data.items || [];
+    currentList = pagination ? currentList.concat(items) : items;
+    S._total = data.total_items || data.total || 0;
+    S._committedOffset = view.offset; S._loadedKey = key;
+    S._folders = (data.folders || []).map(f => ({...f, n: treeCount(f.id) || f.child_count || '',
+      mtime: f.folder_mtime || f.mtime || 0}));
+    if(!pagination){ S._previews = {}; S.parentId = view.dir ? null : ''; }
+    if(view.lib === 'discover'){
+      S._discover = {dirs: data.dirs || 0, per: data.per || 1};
+      S.hasMore = false;
+    }else if(view.lib === 'search'){
+      S._search = {total_folders: data.total_folders || 0, total_items: data.total_items || 0,
+        truncated: !!data.truncated};
+      S.hasMore = false;
+    }else{
+      const limit = view.lib === 'dir' ? 120 : 60;
+      S.hasMore = S._total > 0 ? view.offset + limit < S._total : items.length >= limit;
+    }
+    if(!quiet){
+      const target = pagination && body.querySelector(S.mode === 'list' ? '.list' : '.grid');
+      if(target){
+        const html = S.mode === 'list' ? mediaRows(items) : items.map(cardHTML).join('');
+        target.insertAdjacentHTML('beforeend', html);
+        const count = body.querySelector('.gridhead .cnt');
+        if(count) count.textContent = currentList.length + ' / ' + S._total + ' 项';
+        fillNames(body); attachNames(currentList); bindAllThumbs(document); syncSbar(true);
+      }else repaint();
+    }
+    if(!quiet && S._folders.length && (!pagination || !Object.keys(S._previews).length)){
+      const folders = S._folders.slice(0, view.lib === 'search' ? 24 : S._folders.length);
+      requestApi('/api/folder-previews?cids=' + encodeURIComponent(folders.map(f => f.id).join(',')))
+        .then(result => {
+          if(!active()) return;
+          S._previews = result.previews || {};
+          body.querySelectorAll('.fcard').forEach((element, index) => {
+            if(!folders[index]) return;
+            const template = document.createElement('div');
+            template.innerHTML = folderCardHTML(folders[index], S._previews);
+            const cover = element.querySelector('.cv'), fresh = template.querySelector('.cv');
+            /* ⛔ 必须用「后端真的返回了这个目录的预览」判断，不能用「.cv 存在」——
+               folderCardHTML 在没有预览时也会生成一个空底色 .cv，
+               用它判断会把 187 张全标成"已有封面"，后面 127 张永远不排队。 */
+            if(cover && fresh && (result.previews || {})[folders[index].id]){
+              cover.replaceWith(fresh);
+              element.dataset.cov = '1';
+            }
+          });
+          bindAllThumbs(document);
+        }).catch(() => {});
+    }
+    if(!quiet && view.lib === 'dir' && view.dir && S.parentId === null){
+      requestApi('/api/folder/' + encodeURIComponent(view.dir)).then(result => {
+        if(!active()) return;
+        const anc = result.ancestors || result.trail || [];
+        cacheName(view.dir, (anc[anc.length - 1] || {}).name || '');
+        S.parentId = anc.length > 1 ? anc[anc.length - 2].id : '';
+        const up = body.querySelector('.up');
+        if(up){ up.dataset.up = S.parentId; up.removeAttribute('aria-disabled'); }
+        paintCrumb();
+      }).catch(() => {});
+    }
+    return true;
+  }catch(error){
+    if(!active() || error.name === 'AbortError') return false;
+    S.offset = S._committedOffset || 0;
+    if(!quiet && !pagination) body.innerHTML = '<div class="empty" role="alert">加载失败：' + escapeHTML(error.message) +
+      '<br><button class="chip" data-retry>重新加载</button></div>';
+    return false;
+  }finally{
+    if(active()) S.loading = false;
+  }
+}
+
+/* 本地重画：把 currentList 直接铺回页面，不再打接口。
+   restorePos 静默补完页后用它统一画一次（以前是再 await load()，等于多打一次接口）。 */
+function searchBox(){
+  return '<div class="sbox"><input id="sq" enterkeyhint="search" autocomplete="off" ' +
+    'placeholder="搜索媒体或目录" aria-label="搜索媒体或目录" value="' + escapeHTML(S.q) + '">' +
+    (S.q ? '<button class="clr" id="sqclr">清空</button>' : '') +
+    '<button class="go" id="sqgo">搜索</button></div>';
+}
+function repaint(){
+  const body = $('#body');
+  if(!body) return;
+  const folders = S._folders || [], previews = S._previews || {};
+  let html = '';
+  if(S.lib === 'search') html += searchBox();
+  if(S.lib === 'dir'){
+      if(S.dir){
+        html += '<div class="uprow">' +
+          '<button class="up" data-up="' + escapeHTML(S.parentId || '') +
+          '"' + (S.parentId === null ? ' aria-disabled="true"' : '') + '>↑ 返回上级</button>';
+        /* ★ req-back2discover：从随机发现进来的目录才显示，且回到原发现位置 */
+        if(S.fromDiscover) html += '<button class="up up-back" data-backdiscover="1"' +
+          ' title="回到随机发现（同一批 · 同一位置）">← 返回发现</button>';
+        /* req-back2search：从全库搜索进来的目录 → 右侧「← 返回搜索」（效仿返回发现） */
+        if(S.fromSearch) html += '<button class="up up-back" data-backsearch="1"' +
+          ' title="回到搜索结果（同一批 · 同一位置）">← 返回搜索</button>';
+        /* req-fav：从我的收藏进来的目录 → 右侧「← 返回收藏」（效仿返回发现/搜索） */
+        if(S.fromFav) html += '<button class="up up-back" data-backfav="1"' +
+          ' title="回到我的收藏（同一批 · 同一位置）">← 返回收藏</button>';
+        html += '</div>';
+      }
+    if(folders.length) html += '<div class="frow">' +
+      folders.map(f => folderCardHTML(f, previews)).join('') + '</div>';
+  }
+  let title, count;
+  if(S.lib === 'discover'){
+    title = S.kind === 'image' ? '发现图片' : S.kind === 'video' ? '发现视频' : '随机发现';
+    count = ((S._discover || {}).dirs || 0) + ' 个目录 · ' + currentList.length + ' 项';
+  }else if(S.lib === 'search'){
+    title = '搜索结果';
+    count = folders.length + ' 个目录 · ' + currentList.length + ' 项' + ((S._search || {}).truncated ? '（部分结果）' : '');
+  }else if(S.lib === 'fav'){
+    title = '我的收藏';
+    count = currentList.length + ' / ' + (S._total || 0) + ' 项';
+  }else if(S.lib === 'dir'){
+    title = S.kind === 'image' ? '本目录图片' : S.kind === 'video' ? '本目录视频' : '本目录媒体';
+    count = currentList.length + ' / ' + (S._total || 0) + ' 项';
+  }else{
+    title = LIB_TITLE[S.lib] || '媒体库';
+    count = currentList.length + ' / ' + (S._total || 0) + ' 项';
+  }
+  if(S.lib === 'search' && !S.q){
+    html += '<div class="empty">输入名字搜索，支持中文和部分匹配</div>';
+  }else if(S.lib === 'fav' && !currentList.length){
+    html += '<div class="empty">还没有收藏。打开图片或视频，点右上角 ☆ 即可收藏</div>';
+  }else{
+    html += '<div class="gridhead"><h2>' + title + '</h2><span class="cnt">' + count + '</span>' +
+      (S.lib === 'discover' ? '<button class="chip" id="reshuffle" title="重新抽取一批内容">换一批</button>' : '') + '</div>';
+          /* req-search-ui：搜索命中的目录行放在标题之后（最多 24 个） */
+      if(S.lib === 'search' && folders.length) html += '<div class="frow">' +
+        folders.slice(0, 24).map(f => folderCardHTML(f, previews)).join('') + '</div>';
+      html += S.mode === 'list' ? listHTML(S.lib === 'dir' ? folders : [], currentList)
+                               : gridOf(currentList, folders.length > 0);
+  }
+  body.innerHTML = html;
+  /* req5-frscroll：DOM 刚重建，.frow 是全新的（scrollLeft=0），按目录恢复横向位置 */
+  restoreFrScroll();
+  initFbars();                    /* ★ req-fbar：必须在 restoreFrScroll 之后，滑块才对得上位置 */
+  initFolderCovers();             /* ★ req-fcover：进入视口的目录卡按需分批取封面 */
+  body.querySelectorAll('.fcard').forEach((element, index) => {
+    const name = element.querySelector('.nm span');
+    if(name && folders[index]) name.textContent = folders[index].name || folders[index].id;
+    if(folders[index]) cacheName(folders[index].id, folders[index].name || '');
+  });
+  const input = body.querySelector('#sq');
+  if(input) bindSearchInput(input);
+  const clear = body.querySelector('#sqclr');
+  if(clear) clear.onclick = () => { S.q = ''; S.offset = 0; load(); };
+  fillNames(body); attachNames(currentList); marqueeScan(body);
+  bindAllThumbs(document); paintCrumb(); syncSbar(true);
+  if(!window.__firstCard && body.querySelector('.card')) window.__firstCard = performance.now();
+  /* req-thumbbudget：内容整批换掉（换库/换筛选/换一批）→ 重置首屏预算 */
+  if(typeof THUMB_BUDGET === 'object'){
+    THUMB_BUDGET.used = 0;
+    if(THUMB_BUDGET.idleTimer){ clearTimeout(THUMB_BUDGET.idleTimer); THUMB_BUDGET.idleTimer = 0; }
+  }
+}
+
+
+/* ★ req-emptyfix：只有**本目录什么都没有**（既没子目录也没媒体）才提示"这里还没有内容"。
+   原来只判 items 是否为空 —— 于是"只有子目录、没有直属媒体"的目录会同时显示
+   子目录行 + "这里还没有内容"，看起来像数据坏了（用户就是这么报的）。
+   hasFolders 由调用方传（folders 变量在同一作用域）。 */
+function gridOf(items, hasFolders){
+  if(!items.length){
+    if(hasFolders) return '';          /* 有子目录 → 不显示空提示 */
+    return '<div class="empty">这里还没有内容</div>';
+  }
+  return '<div class="grid">' + items.map(cardHTML).join('') + '</div>';
+}
+
+/* 缩略图按需加载
+   ----------------------------------------------------------------
+   以前是 <img loading="lazy" src="/api/thumb/...">：一进列表页浏览器就并发拉
+   几十张图，而每张未抓过的图要 0.4~1.3 秒（要走 115 上游/ffmpeg），把浏览器
+   对同一个域的 6 条连接全占满 → **下一页的 HTML/接口请求排在图片后面**，
+   体感就是"点进视频/图片要等几秒、返回列表又要等几秒"。
+   现在：IntersectionObserver 只给"快进视野"的卡片排队取图，且客户端最多 4 个并发，
+   失败按 5/10/18/30/45 秒退避重试（配合服务端"视频先回 404 PENDING、后台抓帧"）。 */
+const TQ = {run: 0, max: 4, q: []};
+const observedThumbs = new Set();
+
+/* ★ req-thumbbudget：首屏预算 —— 进页面时只主动取前 N 张（手机 12 / 桌面 24），
+   其余缩略图**等滚动或空闲时**再取。
+   背景：随机发现页一屏就有 100+ 张卡，虽然已有 4 并发 + IntersectionObserver，
+   但每张未缓存图要 0.4~1.3s（走 115 上游/ffmpeg），一次性排队会让页面长时间处于
+   "加载中"（实测 networkidle 曾到 14.9s）。把首屏预算压到"够填满一屏多一点"，
+   首屏就只等这几张，其余随滚动自然补上 —— 代价是"往下滚会边滚边出图"。 */
+const THUMB_BUDGET = {
+  first: (innerWidth <= 700 ? 12 : 24),   /* 首屏主动取多少张 */
+  used: 0,                                 /* 已放行的张数 */
+  idleBatch: (innerWidth <= 700 ? 6 : 12), /* 空闲时每批补多少 */
+  idleTimer: 0
+};
+function budgetLeft(){ return Math.max(0, THUMB_BUDGET.first - THUMB_BUDGET.used); }
+
+function queueThumb(img, force){
+  if(!img.isConnected || img.dataset.thumbDone || img.dataset.inView !== '1') return;
+  if(!force && budgetLeft() <= 0) return;        /* 预算用完 → 等滚动/空闲 */
+  if(!force) THUMB_BUDGET.used++;
+  img.dataset.thumbDone = 'queued';
+  TQ.q.push(img); pumpThumbs();
+}
+
+/* 空闲补取：预算用完后，空闲时每批放行 idleBatch 张（不抢首屏） */
+function idleTopUp(){
+  if(document.hidden) return;
+  const cand = [...document.querySelectorAll('img[data-thumb]')]
+    .filter(im => im.isConnected && im.dataset.inView === '1' && !im.dataset.thumbDone);
+  if(!cand.length) return;
+  cand.slice(0, THUMB_BUDGET.idleBatch).forEach(im => {
+    THUMB_BUDGET.used++;
+    im.dataset.thumbDone = 'queued';
+    TQ.q.push(im);
+  });
+  pumpThumbs();
+  scheduleIdleTopUp();
+}
+function scheduleIdleTopUp(){
+  if(THUMB_BUDGET.idleTimer) return;
+  const go = () => {
+    THUMB_BUDGET.idleTimer = 0;
+    if(TQ.q.length || TQ.run >= TQ.max) { scheduleIdleTopUp(); return; }
+    idleTopUp();
+  };
+  THUMB_BUDGET.idleTimer = setTimeout(go, 900);
+}
+function pumpThumbs(){
+  if(document.hidden) return;
+  while(TQ.run < TQ.max && TQ.q.length){
+    const img = TQ.q.shift();
+    if(!img || !img.isConnected) continue;
+    if(img.dataset.thumbDone !== 'queued') continue;
+    if(img.dataset.inView !== '1'){ img.dataset.thumbDone = ''; continue; }
+    img.dataset.thumbDone = 'loading'; TQ.run++;
+    let settled = false;
+    const finish = () => {
+      if(settled) return false;
+      settled = true; TQ.run--; return true;
+    };
+    img.onload = () => {
+      if(!finish()) return;
+      img.dataset.thumbDone = 'done'; img.style.opacity = '';
+      if(TIO) TIO.unobserve(img);
+      observedThumbs.delete(img); pumpThumbs();
+    };
+    img.onerror = () => {
+      if(!finish()) return;
+      img.style.opacity = '0';
+      const tries = Number(img.dataset.tries || 0) + 1;
+      img.dataset.tries = String(tries); img.dataset.thumbDone = 'waiting';
+      pumpThumbs();
+      if(tries > 5) return;
+      setTimeout(() => {
+        if(!img.isConnected) return;
+        img.dataset.thumbDone = ''; queueThumb(img);
+      }, [5000, 10000, 18000, 30000, 45000][tries - 1]);
+    };
+    /* ★ req-thumbclean：重试必须带 cache-buster。
+       原来固定写 img.src = '/api/thumb/xxx'，浏览器复用了**已缓存的失败/占位响应**，
+       于是"图片已过期"永远刷不掉（小图密集的列表页最容易撞上）。
+       player.html 早前已加 ?r=，列表页这里漏了 —— 现在补上。 */
+    const _bust = img.dataset.tries ? ('?r=' + Date.now() + '_' + img.dataset.tries) : '';
+    img.src = '/api/thumb/' + img.dataset.thumb + _bust;
+  }
+}
+let TIO = null;
+function bindAllThumbs(root){
+  if(!TIO){
+    TIO = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        entry.target.dataset.inView = entry.isIntersecting ? '1' : '';
+        /* 滚动进来的（非首屏）强制放行 —— 预算只约束"首屏一次性排队" */
+        if(entry.isIntersecting) queueThumb(entry.target, !entry.target.dataset.firstScreen);
+      });
+    }, {root: $('#body'), rootMargin: '250px 0px'});
+  }
+  observedThumbs.forEach(img => {
+    if(!img.isConnected){ TIO.unobserve(img); observedThumbs.delete(img); }
+  });
+  const fresh = [...(root || document).querySelectorAll('img[data-thumb]:not([data-obs])')];
+  /* 首次绑定时，前 budgetLeft() 张算"首屏"；之后新出现的（滚动加载）不算 */
+  let firstLeft = budgetLeft();
+  fresh.forEach(img => {
+    img.dataset.obs = '1';
+    if(firstLeft > 0){ img.dataset.firstScreen = '1'; firstLeft--; }
+    observedThumbs.add(img); TIO.observe(img);
+  });
+}
+document.addEventListener('visibilitychange', () => { if(!document.hidden) pumpThumbs(); });
+/* req-thumbbudget：滚动结束后，把新进视野的按批放行（跟手，不等 idle） */
+let __tbScrollT = 0;
+document.addEventListener('scroll', () => {
+  if(__tbScrollT) return;
+  __tbScrollT = setTimeout(() => {
+    __tbScrollT = 0;
+    const cand = [...document.querySelectorAll('img[data-thumb]')]
+      .filter(im => im.isConnected && im.dataset.inView === '1' && !im.dataset.thumbDone);
+    if(!cand.length) return;
+    cand.slice(0, THUMB_BUDGET.idleBatch).forEach(im => {
+      im.dataset.thumbDone = 'queued'; TQ.q.push(im);
+    });
+    pumpThumbs();
+  }, 220);
+}, {passive:true});
+
+
+/* 名称填充：卡片里的 <b> 用 data 属性回填（避免 HTML 注入） */
+/* 文件名压缩：只显示一行，太长就省略，但**后缀一定留着**
+   （用户要求：一行、省略号、能看到 .mp4/.jpg 这种类型后缀） */
+function shortMediaName(name, max){
+  const nm = String(name || '');
+  if(nm.length <= max) return nm;
+  const dot = nm.lastIndexOf('.');
+  const hasExt = dot > 0 && nm.length - dot <= 7 && dot > nm.length - 8;
+  const ext = hasExt ? nm.slice(dot) : '';
+  const base = hasExt ? nm.slice(0, dot) : nm;
+  const keep = Math.max(4, max - ext.length - 1);
+  return base.slice(0, keep) + '…' + ext;
+}
+
+/* ★ req-marquee：名字溢出时启动滚动（不用省略号截断）。
+   两种容器：
+     · 侧边栏/列表行 —— .nm 里只有一个 <i> 或纯文本，包一层 <i>
+     · 子目录卡 —— .nm 里是 <span>，在 span 里包 <i>
+   触发：悬停 / 聚焦 / 触摸长按。滚动距离 = 溢出宽度，时长按距离算（恒定速度）。 */
+function marqueeScan(root){
+  (root || document).querySelectorAll('.row .nm, .fcard .nm, .lr .nm').forEach(nm => {
+    if(nm.closest('.nm') !== nm) return;                 /* 只处理最外层 .nm */
+    const holder = nm.querySelector('span') || nm;
+    if(!holder) return;
+    let inner = holder.querySelector('i.mq-in');
+    const text = (nm.dataset.mqtext !== undefined) ? nm.dataset.mqtext : null;
+    if(!inner){
+      /* 第一次：把纯文本挪进 <i> 容器 */
+      const span = nm.querySelector('span');
+      const t = span ? span.textContent : nm.textContent;
+      nm.dataset.mqtext = t || '';
+      if(span){
+        span.textContent = '';
+        inner = document.createElement('i');
+        inner.className = 'mq-in';
+        inner.textContent = nm.dataset.mqtext;
+        span.appendChild(inner);
+      }else{
+        const ic = nm.querySelector('.ic') || nm.querySelector('svg');
+        const keep = ic ? ic.outerHTML : '';
+        nm.innerHTML = keep + '<i class="mq-in"></i>';
+        inner = nm.querySelector('i.mq-in');
+        inner.textContent = nm.dataset.mqtext;
+      }
+    }
+    if(!inner) return;
+    /* 量一次：溢出宽度
+       ⛔ 不能用 inner.scrollWidth —— <i> 是 inline-block 时它等于自身内容宽度，
+         但若父容器 overflow:hidden，父的 scrollWidth 才代表"内容总宽"。
+         这里同时取 inner.offsetWidth 与 holder.scrollWidth，取大的那个。 */
+    const avail = (holder.clientWidth || nm.clientWidth || 0);
+    /* ⛔ 宽度为 0 = 还没显示（侧边栏折叠节点、或元素刚插入）。
+       这时既不能判"没溢出"、也不能算距离 —— 直接跳过，
+       等展开事件里再补扫（否则折叠的节点永远拿不到滚动）。 */
+    if(avail < 8) return;
+    const need = Math.max(inner.offsetWidth || 0, inner.scrollWidth || 0,
+                          holder.scrollWidth || 0);
+    const over = Math.max(0, Math.round(need - avail));
+    if(over > 4){
+      nm.classList.add('mq');
+      nm.style.setProperty('--mq', (-over) + 'px');
+      nm.style.setProperty('--mq-dur', Math.max(2.4, Math.min(14, over / 26)).toFixed(2) + 's');
+    }else{
+      nm.classList.remove('mq');
+      nm.style.setProperty('--mq', '0px');
+    }
+  });
+}
+/* 触摸长按也触发滚动（手机上悬停不存在） */
+document.addEventListener('touchstart', function(e){
+  const nm = e.target.closest && e.target.closest('.nm.mq');
+  if(nm){ nm.classList.add('touched'); setTimeout(() => nm.classList.remove('touched'), 5200); }
+}, {passive: true});
+window.addEventListener('resize', () => marqueeScan(document));
+
+function attachNames(items){
+  document.querySelectorAll('#body .card').forEach((el, i) => {
+    const it = items[i];
+    if(!it) return;
+    const b = el.querySelector('.meta b');
+    const full = it.name || it.id;
+    if(b){
+      b.textContent = shortMediaName(full, 24);
+      b.title = full;                     // 悬停/长按能看到完整名字
+    }
+    el.dataset.mname = full;
+    el.setAttribute('aria-label', full);
+  });
+}
+
+
+/* ---------------- 目录封面按需分批取 req-fcover ----------------
+   一次要当前目录的**全部**子目录封面时，后端 60 个上限会让后面的目录永远是空底色
+   （子目录数超过后端单次上限时，超出的目录永远拿不到封面）。改成：进入视口的卡才排队，一次 24 个。 */
+const COV_BATCH = 24;
+let COV_PENDING = new Set(), COV_TIMER = 0, COV_BUSY = false, COV_IO = null;
+function covPatch(prev){
+  document.querySelectorAll('#body .fcard').forEach(el => {
+    const cid = el.dataset.folder;
+    if(!cid || el.dataset.cov || !prev[cid]) return;
+    const f = (S._folders || []).find(x => x.id === cid);
+    if(!f) return;
+    const tpl = document.createElement('div');
+    tpl.innerHTML = folderCardHTML(f, prev);
+    const fresh = tpl.querySelector('.cv'), cover = el.querySelector('.cv');
+    if(!fresh || !cover) return;
+    cover.replaceWith(fresh);
+    el.dataset.cov = '1';
+    bindAllThumbs(el);
+  });
+}
+function covFlush(){
+  COV_TIMER = 0;
+  if(COV_BUSY || !COV_PENDING.size) return;
+  const ids = [...COV_PENDING].slice(0, COV_BATCH);
+  ids.forEach(i => COV_PENDING.delete(i));
+  COV_BUSY = true;
+  fetch('/api/folder-previews?cids=' + encodeURIComponent(ids.join(',')),
+        { credentials: 'same-origin' })
+    .then(r => r.ok ? r.json() : { previews: {} })
+    .then(j => {
+      const prev = j.previews || {};
+      Object.assign(S._previews, prev);
+      covPatch(prev);
+    })
+    .catch(() => {})
+    .then(() => { COV_BUSY = false; if(COV_PENDING.size) covSchedule(); });
+}
+function covSchedule(){ if(!COV_TIMER) COV_TIMER = setTimeout(covFlush, 50); }
+function covNeed(el){
+  const cid = el.dataset.folder;
+  /* covq：已问过（后端对"子树确实没媒体"的目录不返回条目，不记就会反复入队） */
+  if(cid && !el.dataset.cov && !el.dataset.covq && !(S._previews || {})[cid]){
+    el.dataset.covq = '1';
+    COV_PENDING.add(cid); covSchedule();
+  }
+}
+function initFolderCovers(){
+  const row = document.querySelector('#body .frow');
+  if(!row) return;
+  if(COV_IO){ COV_IO.disconnect(); COV_IO = null; }
+  const cards = [...document.querySelectorAll('#body .fcard')];
+  if(!cards.length) return;
+  if(!('IntersectionObserver' in window)){ cards.forEach(covNeed); return; }
+  COV_IO = new IntersectionObserver(es => {
+    es.forEach(e => { if(e.isIntersecting) covNeed(e.target); });
+  }, { root: row, rootMargin: '0px 360px 0px 360px' });
+  cards.forEach(el => COV_IO.observe(el));
+}
+
+/* ---------------- 横排目录滑动条 req-fbar（可拖动 · 电脑与手机通用） ---------------- */
+function fbarOf(fr){
+  const nx = fr && fr.nextElementSibling;
+  return (nx && nx.classList && nx.classList.contains('fbar')) ? nx : null;
+}
+function syncFbar(fr){
+  const bar = fbarOf(fr); if(!bar) return;
+  const cw = fr.clientWidth, sw = fr.scrollWidth;
+  if(!cw || sw <= cw + 4){ bar.hidden = true; return; }   /* 不溢出就不显示 */
+  const track = bar.clientWidth || cw;
+  const w = Math.max(34, Math.round(track * cw / sw));
+  const max = Math.max(1, sw - cw);
+  const x = Math.round((fr.scrollLeft / max) * (track - w));
+  const th = bar.firstElementChild;
+  bar.hidden = false;
+  th.style.width = w + 'px';
+  th.style.marginLeft = Math.max(0, Math.min(track - w, x)) + 'px';
+}
+function syncFbars(){ document.querySelectorAll('#body .frow').forEach(syncFbar); }
+function initFbars(){
+  document.querySelectorAll('#body .frow').forEach(fr => {
+    if(fr.dataset.fbar){ syncFbar(fr); return; }
+    fr.dataset.fbar = '1';
+    const bar = document.createElement('div');
+    bar.className = 'fbar'; bar.hidden = true;
+    bar.innerHTML = '<i class="fb-t"></i>';
+    fr.after(bar);
+    const th = bar.firstElementChild;
+    bar.addEventListener('pointerdown', e => {
+      const track = bar.clientWidth, w = th.offsetWidth;
+      const max = Math.max(1, fr.scrollWidth - fr.clientWidth);
+      const span = Math.max(1, track - w);
+      const startX = e.clientX, startLeft = fr.scrollLeft;
+      const onThumb = (e.target === th);
+      bar.classList.add('on');
+      try{ bar.setPointerCapture(e.pointerId); }catch(err){}
+      if(!onThumb){                                   /* 点轨道 → 以滑块居中跳转 */
+        const r = bar.getBoundingClientRect();
+        const t = Math.max(0, Math.min(1, (e.clientX - r.left - w / 2) / span));
+        fr.scrollLeft = t * max; syncFbar(fr);
+      }
+      const move = ev => {
+        if(!onThumb) return;
+        fr.scrollLeft = startLeft + ((ev.clientX - startX) / span) * max;
+        syncFbar(fr);
+      };
+      const up = () => {
+        bar.classList.remove('on');
+        bar.removeEventListener('pointermove', move);
+        bar.removeEventListener('pointerup', up);
+        bar.removeEventListener('pointercancel', up);
+      };
+      bar.addEventListener('pointermove', move);
+      bar.addEventListener('pointerup', up);
+      bar.addEventListener('pointercancel', up);
+      e.preventDefault();
+    });
+    /* 键盘可达性：聚焦后左右方向键也能翻 */
+    bar.tabIndex = 0;
+    bar.setAttribute('role', 'scrollbar');
+    bar.addEventListener('keydown', e => {
+      if(e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      fr.scrollLeft += (e.key === 'ArrowLeft' ? -1 : 1) * Math.max(120, fr.clientWidth * 0.7);
+      syncFbar(fr); e.preventDefault();
+    });
+    syncFbar(fr);
+  });
+}
+window.addEventListener('resize', syncFbars);
+
+/* ---------------- 右侧滚动指示条（iOS 没有常显滚动条） ---------------- */
+let _sbBusy = null;
+function syncSbar(force){
+  const el = $('#body'), bar = $('#sbar'), th = $('#sthumb');
+  if(!el || !bar || !th) return;
+  const top = document.querySelector('.top');
+  bar.style.top = (((top && top.offsetHeight) || 56) + 2) + 'px';
+  const ch = el.clientHeight, sh = el.scrollHeight;
+  if(sh <= ch + 8){ bar.classList.remove('on', 'busy'); return; }
+  bar.classList.add('on');
+  const h = Math.max(30, Math.round(ch * ch / sh));
+  const y = Math.round((el.scrollTop / Math.max(1, sh - ch)) * (ch - h));
+  th.style.height = h + 'px';
+  th.style.top = Math.max(0, Math.min(ch - h, y)) + 'px';
+  if(force) bar.classList.remove('busy');
+}
+window.addEventListener('resize', () => syncSbar(true));
+window.addEventListener('resize', syncFbars);
+/* req5-frscroll：用户横向滑动文件夹时实时记住位置 */
+document.addEventListener('scroll', function(e){
+  const t = e.target;
+  if(t && t.classList && t.classList.contains('frow')){
+    FR_SCROLL[frKey()] = t.scrollLeft || 0;
+    try{ sessionStorage.setItem('b2frscroll', JSON.stringify(FR_SCROLL)); }catch(err){}
+    syncFbar(t);                  /* ★ req-fbar：滚动时同步滑块位置 */
+  }
+}, true);
+
+/* ---------------- 交互 ---------------- */
+/* ★ req-topsel：类型 / 排序两个下拉 + 回到顶部 */
+kindSel = dselInit($('#chips'), v => {
+  if(v === S.kind) return;
+  saveFrScroll();                          /* req5-libhook */
+  S.kind = v;
+  S.offset = 0;
+  load();     // 随机发现 / 目录 / 搜索 三种都是"就地过滤"：
+              // 目录走 /api/browse?kind=，只在该目录内筛，不再跳到全部图片/全部视频
+});
+sortSel = dselInit($('#sort'), v => {
+  if(v === S.sort) return;
+  S.sort = v;
+  S.offset = 0;
+  load();
+});
+$('#toTop').addEventListener('click', () => {
+  const b = $('#body');
+  if(!b) return;
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  try{ b.scrollTo({top: 0, behavior: reduce ? 'auto' : 'smooth'}); }
+  catch(e){ b.scrollTop = 0; }             /* 老浏览器没有 options 形式 */
+});
+
+/* 网格/列表切换按钮已按要求从顶栏移除；?mode=list 仍可用（旧链接兼容） */
+const _segEl = $('#seg');
+if(_segEl){
+  _segEl.addEventListener('click', e => {
+    const b = e.target.closest('button[data-mode]');
+    if(!b) return;
+    _segEl.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    S.mode = b.dataset.mode;
+    S._loadedKey = snapKey(); setUrl(); repaint();
+  });
+}
+$('#sort').addEventListener('change', e => { S.sort = e.target.value; S.offset = 0; load(); });
+$('#theme').addEventListener('click', () => {
+  const r = document.documentElement;
+  r.dataset.theme = r.dataset.theme === 'light' ? '' : 'light';
+  try{ localStorage.setItem('emby_theme', r.dataset.theme); }catch(e){}
+});
+try{ document.documentElement.dataset.theme = localStorage.getItem('emby_theme') || ''; }catch(e){}
+
+$('#crumbs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-crumb]');
+  if(!b) return;
+  saveFrScroll();                               /* req5-frscroll */
+  S.lib = 'dir'; S.dir = b.dataset.crumb; S.offset = 0; renderTree(); load();
+});
+
+$('#body').addEventListener('click', async e => {
+  if(e.target.closest('[data-retry]')){ S.offset = 0; load(); return; }
+  // 缩略图右下角"跳到所在目录"小按钮（随机发现 / 搜索结果里才有）
+  const go = e.target.closest('[data-goto]');
+  if(go){
+    e.preventDefault(); e.stopPropagation();
+    const name = go.dataset.gname || '';
+    const gid = go.dataset.goto;
+      askGoto(name || gid, () => {
+        enterDir(gid, name);                      /* req-back2discover + req-dir-all */
+      });    return;
+  }
+  if(e.target.closest('#reshuffle')){
+    // "换一批"必须换 seed，否则还是同一批
+    //（原来第一行就是 `if(id==='reshuffle'){ load(); return; }`，把换 seed 的分支整个挡掉了）
+    S.seed = String(Math.floor(Math.random() * 1e9));
+    try{ localStorage.setItem('b2seed', S.seed); }catch(e){}   /* req2567-seed：跨会话保留 */
+    S.offset = 0; load();
+    return;
+  }
+    const f = e.target.closest('[data-folder]');
+    if(f){
+      const nm = (f.querySelector('.nm span, .nm b') || {}).textContent || '';
+      enterDir(f.dataset.folder, nm);             /* req-back2discover + req-dir-all */
+      return;
+    }
+    /* ★ req-back2discover：回到随机发现 —— 同一批内容、同一位置 */
+    /* ★ req-back2search：回到全库搜索 —— 同一次查询、同一批结果、同一位置 */
+    const bs = e.target.closest('[data-backsearch]');
+    if(bs){
+      const from = S.fromSearch || {};
+      saveFrScroll();                             /* req5-frscroll：记住当前目录的横向位置 */
+      S.lib = 'search'; S.dir = ''; S.parentId = ''; S.offset = 0;
+      S.q = from.q || '';
+      S.kind = from.kind || 'all';
+      S.fromSearch = null;
+      syncChips(); syncLibs(); renderTree();
+      /* 同一批结果：快照命中就零请求铺回（含滚动位置）；未命中则拉完后也要定位 */
+      if(loadSnap()){ S.quiet = true; repaint(); restorePos(); }
+      else load().then(() => restorePos());
+      return;
+    }
+    /* ★ req-fav：回到我的收藏 —— 同一批、同一位置 */
+    const bf = e.target.closest('[data-backfav]');
+    if(bf){
+      const from = S.fromFav || {};
+      saveFrScroll();                             /* req5-frscroll：记住当前目录横向位置 */
+      S.lib = 'fav'; S.dir = ''; S.parentId = ''; S.q = ''; S.offset = 0;
+      S.kind = from.kind || 'all';
+      S.fromFav = null;
+      syncChips(); setUrl(); paintCrumb(); syncLibs(); renderTree();
+      /* 同一批：快照命中零请求铺回（含滚动位置）；未命中则拉完后定位 */
+      if(loadSnap()){ S.quiet = true; repaint(); restorePos(); }
+      else load().then(() => restorePos());
+      return;
+    }
+    const bd = e.target.closest('[data-backdiscover]');
+    if(bd){
+      const from = S.fromDiscover || {};
+      saveFrScroll();                             /* req5-frscroll：记住当前目录的横向位置 */
+      S.lib = 'discover'; S.dir = ''; S.parentId = ''; S.q = ''; S.offset = 0;
+      S.kind = from.kind || 'all';
+
+      syncChips();                                /* 顶栏 chip 同步 */
+      /* 快照路径不经过 load()，这里补上地址栏与面包屑，否则地址栏还停在目录 */
+      setUrl(); paintCrumb();      if(from.seed) S.seed = from.seed;
+      S.fromDiscover = null;
+      syncLibs(); renderTree();
+      /* 同一批：快照命中就零请求铺回（含滚动位置）；未命中则按同 seed 拉完后定位 */
+      if(loadSnap()){ S.quiet = true; repaint(); restorePos(); }
+      else load().then(() => restorePos());
+      return;
+    }
+  const up = e.target.closest('[data-up]');
+  if(up){
+    if(up.getAttribute('aria-disabled') === 'true') return;
+    saveFrScroll();                             /* req5-frscroll：返回前记住当前目录的横向位置 */
+    if(up.dataset.up){ S.dir = up.dataset.up; S.offset = 0; load(); }
+    else { S.lib = 'discover'; S.dir = ''; S.offset = 0; syncLibs(); renderTree(); load(); }
+    return;
+  }
+  const m = e.target.closest('[data-media]');
+  if(m){
+    // 交给新的播放/查看页（样式统一，支持本地播放器接管）
+    const id = m.dataset.media;
+    saveRestore();
+    saveSnap();
+    // 记录"列表页此刻的可见顺序"，播放页左右滑按它走（见 player.html 的 buildList）
+    try{
+      sessionStorage.setItem('b2order', JSON.stringify({
+        at: Date.now(),
+        ids: currentList.map(x => x.id),
+        kinds: currentList.map(x => x.kind || ''),
+      }));
+    }catch(e){}                     // 记住当前视图与滚动位置，返回时还原
+    location.href = playUrl(id);
+  }
+});
+
+/* 点击前预取播放页：按下就发请求，抬手跳转时页面已在路上（视频缩略图在抓帧时不至于干等） */
+const prefetchedPlay = new Set();
+function playUrl(id){
+  const item = currentList.find(entry => String(entry.id) === String(id));
+  const parent = S.lib === 'dir' ? S.dir : (item && item.parent_id) || '';
+  return '/play/' + encodeURIComponent(id) + '?parent=' + encodeURIComponent(parent) +
+    '&from=' + encodeURIComponent(location.pathname + location.search) +
+    (S.lib === 'discover' ? '&scope=discover&seed=' + encodeURIComponent(S.seed) : '');
+}
+function prefetchPlay(id){
+  if(!id || prefetchedPlay.has(id) || prefetchedPlay.size >= 8 ||
+     (navigator.connection && navigator.connection.saveData)) return;
+  try{
+    var href = playUrl(id);
+    if(document.querySelector('link[rel="prefetch"][href="' + href + '"]')) return;
+    var l = document.createElement('link');
+    l.rel = 'prefetch';
+    l.as = 'document';
+    l.href = href;
+    document.head.appendChild(l);
+    prefetchedPlay.add(id);
+  }catch(e){}
+}
+document.addEventListener('pointerdown', function(e){
+  var m = e.target.closest && e.target.closest('[data-media]');
+  if(m) prefetchPlay(m.dataset.media);
+}, {passive:true, capture:true});
+let hoverPrefetch = null;
+document.addEventListener('mouseover', function(e){
+  var m = e.target.closest && e.target.closest('[data-media]');
+  clearTimeout(hoverPrefetch);
+  if(m) hoverPrefetch = setTimeout(() => prefetchPlay(m.dataset.media), 180);
+}, {passive:true});
+$('#body').addEventListener('keydown', event => {
+  if(event.key !== 'Enter' && event.key !== ' ') return;
+  if(!event.target.matches('.card, .fcard')) return;
+  event.preventDefault(); event.target.click();
+});
+
+/* 滚动到底自动加载下一页（同时刷新右侧指示条） */
+$('#body').addEventListener('scroll', () => {
+  syncSbar(false);
+  const _b = $('#sbar');
+  if(_b){
+    _b.classList.add('busy');
+    clearTimeout(_sbBusy);
+    _sbBusy = setTimeout(() => _b.classList.remove('busy'), 700);
+  }
+  if(!S.hasMore || S.loading || S.quiet) return;
+  const el = $('#body');
+  if(el.scrollTop + el.clientHeight > el.scrollHeight - 400){
+    S.offset += (S.lib === 'dir' ? 120 : 60);
+    load();
+  }
+});
+
+/* ---------------- 移动端抽屉 ---------------- */
+const closeDrawer = () => { $('#side').classList.remove('open'); $('#scrim').classList.remove('on'); };
+$('#drawerBtn').addEventListener('click', () => { $('#side').classList.add('open'); $('#scrim').classList.add('on'); });
+$('#scrim').addEventListener('click', closeDrawer);
+
+/* ---------------- 灯箱（直链，服务器不出字节） ---------------- */
+function openLb(i){
+  LB = i; $('#lb').classList.add('on'); document.body.style.overflow = 'hidden'; showLb();
+}
+function closeLb(){ $('#lb').classList.remove('on'); document.body.style.overflow = ''; resetZoom(); }
+let scale = 1, tx = 0, ty = 0, pinch = false, startDist = 0, startScale = 1, px0 = 0, py0 = 0, sx = 0, sy = 0;
+function applyT(){ const img = $('#lbImg'); if(img) img.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')'; }
+function resetZoom(){ scale = 1; tx = 0; ty = 0; pinch = false; applyT(); $('#lbRot').classList.remove('rot90'); }
+
+function isPortrait(){ try{ return matchMedia('(orientation: portrait)').matches; }catch(e){ return innerHeight >= innerWidth; } }
+function applyOrientation(){
+  const p = currentList[LB]; if(!p) return;
+  const rot = $('#lbRot');
+  if(p.kind === 'video'){ rot.classList.remove('rot90'); return; }
+  const img = $('#lbImg');
+  const land = img.naturalWidth > img.naturalHeight * 1.05;
+  rot.classList.toggle('rot90', isPortrait() && land);
+}
+window.addEventListener('resize', () => setTimeout(applyOrientation, 80));
+window.addEventListener('orientationchange', () => setTimeout(applyOrientation, 220));
+
+async function showLb(){
+  const it = currentList[LB]; if(!it) return;
+  const isV = it.kind === 'video';
+  const ext = extOf(it.name);
+  $('#lbName').textContent = it.name || it.id;
+  $('#lbIdx').textContent = (LB + 1) + ' / ' + currentList.length;
+  $('#lbInfo').textContent = [human(it.size), fmtDate(it.mtime), isV ? ('时长 ' + (fmtDur(it.duration) || '未知')) : '图片']
+    .filter(Boolean).join(' · ');
+  $('#lbImg').style.display = isV ? 'none' : 'block';
+  const vph = $('#lbVidPh'); if(vph) vph.style.display = isV ? 'grid' : 'none';
+  resetZoom();
+  try{
+    const d = await api('/api/link/' + encodeURIComponent(it.id));
+    if(isV){
+      const v = $('#lbVideo');
+      if(v){ v.src = d.url; v.style.display = 'block'; v.play().catch(() => {}); }
+      if(vph){ vph.style.display = 'none'; }
+      if(NO_PLAY.includes(ext)) $('#lbInfo').textContent += ' · 浏览器通常播不了该格式';
+    }else{
+      const img = $('#lbImg');
+      img.onload = applyOrientation;
+      img.src = d.url;
+      if(vph) vph.style.display = 'none';
+    }
+  }catch(e){
+    $('#lbInfo').textContent += ' · 取直链失败：' + e.message;
+  }
+}
+function step(d){
+  if(!currentList.length) return;
+  LB = (LB + d + currentList.length) % currentList.length;
+  showLb();
+}
+$('#lbNext').onclick = () => step(1);
+$('#lbPrev').onclick = () => step(-1);
+$('#lbClose').onclick = closeLb;
+$('#lbStage').addEventListener('click', e => {
+  if(e.target.id !== 'lbStage') return;
+  // 伪全屏下先退出全屏，再点才关闭灯箱（避免一按就退出浏览）
+  if($('#lb').classList.contains('pseudo-fs')){ lbFs(false); return; }
+  closeLb();
+});
+/* 全屏：iPhone Safari 没有元素级 Fullscreen API，视频走原生全屏、图片走伪全屏 */
+function lbFs(on){
+  $('#lb').classList.toggle('pseudo-fs', !!on);
+}
+$('#lbFull').onclick = () => {
+  const de = document, el = $('#lb');
+  const cur = de.fullscreenElement || de.webkitFullscreenElement;
+  if(cur){ try{ (de.exitFullscreen || de.webkitExitFullscreen).call(de); }catch(e){} return; }
+  const it = currentList[LB];
+  const v = $('#lbVideo');
+  if(it && it.kind === 'video' && v && typeof v.webkitEnterFullscreen === 'function'
+     && !document.documentElement.requestFullscreen){
+    try{ v.webkitEnterFullscreen(); return; }catch(e){}
+  }
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if(req){
+    try{
+      const p = req.call(el);
+      if(p && p.catch) p.catch(() => lbFs(!el.classList.contains('pseudo-fs')));
+      return;
+    }catch(e){}
+  }
+  lbFs(!el.classList.contains('pseudo-fs'));
+};
+document.addEventListener('keydown', e => {
+  if(!$('#lb').classList.contains('on')) return;
+  if(e.key === 'Escape') closeLb();
+  else if(e.key === 'ArrowRight') step(1);
+  else if(e.key === 'ArrowLeft') step(-1);
+  else if(e.key === 'f' || e.key === 'F') $('#lbFull').click();
+});
+
+/* 双指缩放 */
+$('#lbStage').addEventListener('touchstart', e => {
+  const it = currentList[LB]; if(!it || it.kind === 'video') return;
+  if(e.touches.length === 2){
+    pinch = true;
+    startDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY) || 1;
+    startScale = scale; e.preventDefault();
+  }else if(e.touches.length === 1 && scale > 1.01){
+    px0 = e.touches[0].clientX; py0 = e.touches[0].clientY; sx = tx; sy = ty;
+  }
+}, {passive: false});
+$('#lbStage').addEventListener('touchmove', e => {
+  if(pinch && e.touches.length === 2){
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    scale = Math.min(5, Math.max(1, startScale * d / startDist));
+    applyT(); e.preventDefault();
+  }else if(e.touches.length === 1 && scale > 1.01 && !pinch){
+    tx = sx + (e.touches[0].clientX - px0);
+    ty = sy + (e.touches[0].clientY - py0);
+    applyT(); e.preventDefault();
+  }
+}, {passive: false});
+$('#lbStage').addEventListener('touchend', e => {
+  if(pinch && e.touches.length < 2){ pinch = false; if(scale <= 1.05) resetZoom(); }
+}, {passive: true});
+let tx0 = 0;
+$('#lb').addEventListener('touchstart', e => { tx0 = e.changedTouches[0].clientX; }, {passive: true});
+$('#lb').addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - tx0;
+  if(scale <= 1.01 && Math.abs(dx) > 60) step(dx < 0 ? 1 : -1);
+}, {passive: true});
+
+async function restorePos(){
+  let state = null;
+  try{ state = JSON.parse(sessionStorage.getItem('b2restore') || 'null'); }catch(e){}
+  /* req-back2search：b2restore 可能是**别的视图**留下的旧状态
+     （例：从搜索进目录前，里面存的是随机发现那一屏）。
+     以前遇到不匹配就直接 return → 快照里明明有正确位置（S._snapScroll）却不恢复，
+     表现就是"返回搜索/返回发现后滚动回到顶部"。这里先把不匹配的清掉，再回退到快照位置。 */
+  if(state && (state.lib !== S.lib || (S.lib === 'dir' && state.dir !== S.dir) ||
+               (state.kind || 'all') !== S.kind || (state.q || '') !== S.q ||
+               state.sort !== S.sort || state.mode !== S.mode || state.seed !== S.seed)){
+    state = null;
+    try{ sessionStorage.removeItem('b2restore'); }catch(e){}
+  }
+  if(!state && S._snapScroll !== undefined) state = {...S, scrollTop: S._snapScroll, loaded: currentList.length, at: Date.now()};
+  /* ★ req-backsnap：快照条目不在（未命中/被清理）时，仍按"本视图存过的位置"兜底，
+     这样"返回发现/返回搜索"不会因为条目失配就掉回顶部（会按需补拉分页）。 */
+  if(!state){
+    const meta = snapMetaFor(snapKey());
+    if(meta) state = {scrollTop: meta.scrollTop || 0, loaded: meta.loaded || 0, at: meta.at || Date.now()};
+  }
+  if(!state || Date.now() - (state.at || 0) > RETURN_TTL) return;
+  const key = snapKey();
+  let restoreRequest = listRequest;
+  if(state.lib !== S.lib || (S.lib === 'dir' && state.dir !== S.dir) || (state.kind || 'all') !== S.kind ||
+     (state.q || '') !== S.q || state.sort !== S.sort || state.mode !== S.mode || state.seed !== S.seed) return;
+  try{
+    S.quiet = true;
+    let pages = 0;
+    while(currentList.length < (state.loaded || 0) && S.hasMore && pages++ < 40){
+      S.offset += S.lib === 'dir' ? 120 : 60;
+      const pending = load(true);
+      restoreRequest = listRequest;
+      const success = await pending;
+      if(key !== snapKey() || restoreRequest !== listRequest) return;
+      if(!success) break;
+    }
+    S.quiet = false;
+    if(pages){ repaint(); renderCrumbs(); }
+    const body = $('#body');
+    body.scrollTop = state.scrollTop || 0;
+    /* req5-frscroll：还原文件夹横向位置（优先用按目录存的映射，回退到快照值） */
+    if(S._snapScrollLeft){
+      const _fr = body.querySelector('.frow');
+      if(_fr) _fr.scrollLeft = S._snapScrollLeft;
+      S._snapScrollLeft = 0;
+    }
+    restoreFrScroll();
+    window.__restore = {want: state.scrollTop || 0, applied: body.scrollTop, loaded: currentList.length, pages};
+    syncSbar(true);
+  }finally{
+    if(key === snapKey() && restoreRequest === listRequest){
+      S.quiet = false;
+      try{ sessionStorage.removeItem('b2restore'); }catch(e){}
+    }
+  }
+}
+window.addEventListener('pagehide', () => { saveRestore(); saveSnap(); });
+window.addEventListener('pageshow', event => {
+  if(event.persisted){ syncSbar(true); pumpThumbs(); }
+});
+
+
+/* ---------------- 启动 ---------------- */
+(async () => {
+  syncLibs();
+  const seg0 = $('#seg');
+  if(seg0) seg0.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.mode === S.mode));
+  syncChips();                               /* req-topsel：类型下拉同步 */
+  if(sortSel) sortSel.set(S.sort || 'mtime', true);
+  renderTree();
+  // 返回时不要让浏览器自己也去恢复滚动（会和我们的 restorePos 打架，出现跳动）
+  try{ if('scrollRestoration' in history) history.scrollRestoration = 'manual'; }catch(e){}
+  paintCrumb();                                // 进页面第一帧就有目录名，不留空白
+  // 侧栏目录树：先用 sessionStorage 缓存画出来（返回时立刻有），再后台刷新。
+  // 关键：**不要** await tree 再 load()——树慢的时候（实测 1.7s）整屏卡片都要等它。
+  // 命中缓存时也放到下一个事件循环再画：361 行 DOM 在手机上要几十毫秒，
+  // 先让"内容"这条线把卡片铺上去，侧栏随后补上（返回体感更快）。
+  if(loadTreeCache()) setTimeout(renderTree, 0);
+  if(loadSnap()){
+    repaint();                                 // ★ 零请求：直接铺出返回前的列表
+    if(S.lib === 'dir' && S.parentId === null) renderCrumbs();
+  }else{
+    await load();                              // 正常进入才有这一次请求
+  }
+  await restorePos();
+  syncSbar(true);
+  (async () => {
+    // 缓存够新（60 秒内）就不后台刷了：目录树是 13KB 的 JSON，
+    // 手机流量和解析都省下来（返回列表时我们本来就只关心内容）
+    try{
+      const _c = JSON.parse(sessionStorage.getItem('b2tree') || 'null');
+      if(_c && Date.now() - (_c.at || 0) < 60000 && _c.data){ return; }
+    }catch(e){}
+    try{
+      const j = await api('/api/tree?depth=2');
+      treeData = j; saveTree();
+      if(S.lib === 'dir' && S.dir) openSet.add((j.nodes || []).length ? (j.nodes[0] || {}).id || '' : '');
+      renderTree();
+    }catch(e){ if(!treeData) renderTree(); }
+  })();
+})();
+
+/* ============ scrollbar-v3（sb-host-fix）细胶囊滚动条 · 不滚动自动隐藏 ============
+   host     = 不滚动的父容器（.side / .main），滑块挂这里，不会被内容滚走
+   scroller = 真正滚动的元素（.tree / #body），只用来读 scrollTop / scrollHeight
+*/
+/* req2567-scrollbar：.sb-fake 注入逻辑已移除（与 #sbar 重复） */
+
+/* ============ 图片边缘光漫射（G3）：把视口内卡片的缩略图复制到发光层 ============ */
+(function(){
+  const layer = () => document.getElementById('glowlayer');
+  /* 分级判定（lowfx-tier）：
+     · iOS 的 Safari 出于省电 hardwareConcurrency 常报 4，不能据此判定"不可用" → 只降级不关闭
+     · nofx（彻底关）：内存 <2GB、开启省流量、或系统要求减少动效
+     · lowfx（降级）  ：≤4 核 / 移动端 / 小屏 —— 保留磨砂，只减光斑 */
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+  const cores = navigator.hardwareConcurrency || 4;
+  const memGB = navigator.deviceMemory || 0;                 /* Chrome 有，Safari 无 → 0 */
+  const reduceMotion = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const saveData = !!(navigator.connection && navigator.connection.saveData);
+  const tinyScreen = Math.min(innerWidth, innerHeight) <= 360;
+
+  const nofx = (memGB > 0 && memGB < 2) || saveData || reduceMotion;
+  const lowfx = !nofx && (cores <= 4 || isMobile || tinyScreen);
+
+  if (nofx) document.body.classList.add('nofx');
+  else if (lowfx) document.body.classList.add('lowfx');
+/* ★ req-glow4/5：卡片发光总控
+     · 每张卡**一个** .glowcard div，坐标写在**滚动内容坐标系**（跟着内容滚，滚动不重算）
+     · 几何用**卡片 rect**（不是 img rect —— img 高度是 calc(100% + 51px)，比卡片高会向下溢出）
+     · 缩略图没到就先给一层中性光（PLACEHOLDER），解码后换成该图**边缘像素平均色**
+     · 距离 = 网格间距（.grid{gap:13px}），三层 box-shadow 由强到弱 → 填满缝隙并与邻卡叠加
+     · 滚动只做"新进视口的卡片补光"（幂等、不重建）；hover 时与卡片同步上移 */
+  let raf = 0;
+  const GAP_FALLBACK = 13;
+  const GLOW_SOFT = lowfx ? 220 : 900;    /* req-glowfix：软上限（远超一屏，不再让新卡没光） */
+  const GLOW_PRUNE_AT = lowfx ? 120 : 400; /* 超过这个数才裁剪"离视口很远"的光斑 */
+  const PLACEHOLDER = '196,206,222';        /* 中性光色（缩略图未到） */
+  const EDGE_CACHE = new Map();             /* img.src → "r,g,b" */
+  const GLOW_MAP = new Map();               /* card 元素 → 光斑 div */
+
+  function gridGap(){
+    const g = document.querySelector('.grid');
+    if(!g) return GAP_FALLBACK;
+    const cs = getComputedStyle(g);
+    const v = Math.min(parseFloat(cs.columnGap) || GAP_FALLBACK, parseFloat(cs.rowGap) || GAP_FALLBACK);
+    return Math.max(6, Math.round(v || GAP_FALLBACK));
+  }
+  function edgeColor(img){
+    const key = img.src, hit = EDGE_CACHE.get(key);
+    if(hit !== undefined) return hit;
+    let out = null;
+    try{
+      const n = 5, cv = document.createElement('canvas');
+      cv.width = n; cv.height = n;
+      const cx = cv.getContext('2d', {willReadFrequently:true});
+      cx.drawImage(img, 0, 0, n, n);
+      const d = cx.getImageData(0, 0, n, n).data;
+      let r = 0, g = 0, b = 0, cnt = 0;
+      for(let y = 0; y < n; y++) for(let x = 0; x < n; x++){
+        if(x && y && x < n - 1 && y < n - 1) continue;      /* 只统计最外一圈 */
+        const p = (y * n + x) * 4;
+        if(d[p + 3] < 8) continue;
+        r += d[p]; g += d[p + 1]; b += d[p + 2]; cnt++;
+      }
+      if(cnt){
+        r /= cnt; g /= cnt; b /= cnt;
+        /* req-glow5c：很多图边缘本身就是黑色 —— 直接用会跟深色背景融成一片（看着像没光）。
+           这里在 HSL 里把亮度抬进"能发光"的区间（暗色抬、亮色不动），并适度加饱和。 */
+        let mx = Math.max(r, g, b) / 255, mn = Math.min(r, g, b) / 255;
+        let hh = 0, ss = 0, ll = (mx + mn) / 2;
+        const dd = mx - mn;
+        if(dd > 0.0001){
+          ss = ll > 0.5 ? dd / (2 - mx - mn) : dd / (mx + mn);
+          if(mx === r / 255) hh = ((g - b) / 255) / dd + (g < b ? 6 : 0);
+          else if(mx === g / 255) hh = ((b - r) / 255) / dd + 2;
+          else hh = ((r - g) / 255) / dd + 4;
+          hh /= 6;
+        }
+        if(ll < 0.46) ll = 0.46 + ll * 0.30;          /* 暗色抬亮；≥0.46 保持原样 */
+        ss = Math.min(1, ss * 1.22 + 0.05);
+        /* HSL → RGB */
+        const q = ll < 0.5 ? ll * (1 + ss) : ll + ss - ll * ss, p2 = 2 * ll - q;
+        const f = t2 => { t2 = (t2 + 1) % 1;
+          if(t2 < 1/6) return p2 + (q - p2) * 6 * t2;
+          if(t2 < 1/2) return q;
+          if(t2 < 2/3) return p2 + (q - p2) * (2/3 - t2) * 6;
+          return p2; };
+        out = [f(hh + 1/3), f(hh), f(hh - 1/3)]
+          .map(v => Math.round(Math.max(0, Math.min(1, v)) * 255)).join(',');
+      }
+    }catch(e){ /* 取不到色就用中性光 */ }
+    if(EDGE_CACHE.size > 500) EDGE_CACHE.clear();
+    EDGE_CACHE.set(key, out);
+    return out;
+  }
+  function ensureLayer(){
+    const bodyEl = document.getElementById('body');
+    if(!bodyEl) return null;
+    let w = document.getElementById('glowlayer');
+    if(!w){ w = document.createElement('div'); w.className = 'glowlayer'; w.id = 'glowlayer';
+      w.setAttribute('aria-hidden', 'true'); }
+    if(w.parentNode !== bodyEl) bodyEl.insertBefore(w, bodyEl.firstChild);
+    return w;
+  }
+  function inView(card){
+    const r = card.getBoundingClientRect(), vh = innerHeight;
+    return r.bottom > -320 && r.top < vh + 320;
+  }
+  function makeGlow(card){
+    if(GLOW_MAP.has(card) || GLOW_MAP.size >= GLOW_SOFT || !card.isConnected) return null;
+    if(document.body.classList.contains('nofx')) return null;
+    const wrap = ensureLayer(); if(!wrap) return null;
+    const bodyEl = document.getElementById('body');
+    const bb = bodyEl.getBoundingClientRect(), r = card.getBoundingClientRect();
+    if(r.width < 2 || r.height < 2) return null;
+    const br = parseFloat(getComputedStyle(card).borderRadius) || 11;
+    const d = document.createElement('div');
+    d.className = 'glowcard';
+    d.style.cssText = 'left:' + Math.round(r.left - bb.left + bodyEl.scrollLeft) +
+      'px;top:' + Math.round(r.top - bb.top + bodyEl.scrollTop) +
+      'px;width:' + Math.round(r.width) + 'px;height:' + Math.round(r.height) +
+      'px;border-radius:' + br + 'px';
+    d.style.setProperty('--gw', gridGap() + 'px');
+    d.style.setProperty('--glow-c', PLACEHOLDER);
+    d.dataset.ph = '1';
+    wrap.appendChild(d);
+    GLOW_MAP.set(card, d);
+    return d;
+  }
+  function armCard(card){
+    const img = card.querySelector('img');
+    if(!GLOW_MAP.has(card)){
+      if(!inView(card)) return;
+      makeGlow(card);
+    }
+    if(!img || img.dataset.glowDone) return;
+    img.dataset.glowDone = '1';
+    const paint = () => {
+      if(!img.naturalWidth) return;
+      const col = edgeColor(img); if(!col) return;
+      let d = GLOW_MAP.get(card);
+      if(!d) d = makeGlow(card);
+      if(d){ d.style.setProperty('--glow-c', col); delete d.dataset.ph; }
+    };
+    if(img.complete && img.naturalWidth) paint();
+    else img.addEventListener('load', paint, {once:true});
+  }
+  let lastW = innerWidth;
+  function syncGlow(){
+    GLOW_MAP.forEach((d, card) => { if(!card.isConnected){ d.remove(); GLOW_MAP.delete(card); } });
+    if(innerWidth !== lastW){
+      lastW = innerWidth;
+      GLOW_MAP.forEach(d => d.remove()); GLOW_MAP.clear();
+    }
+    /* req-glowfix：光斑多了才裁剪"离视口很远"的（远端的 box-shadow 不划算），
+       近处/可见的永远保留 —— 这样往回滚时不会再出现"顶部没光要刷新" */
+    if(GLOW_MAP.size > GLOW_PRUNE_AT){
+      const lim = innerHeight * 4;
+      GLOW_MAP.forEach((d, card) => {
+        const r = card.getBoundingClientRect();
+        if(r.bottom < -lim || r.top > innerHeight + lim){ d.remove(); GLOW_MAP.delete(card); }
+      });
+    }
+    document.querySelectorAll('.grid > .card, .grid > .fcard').forEach(armCard);
+    forceLiftSync();          /* req-glow6：重绘/补光后全量对齐，避免任何残留 */
+  }
+  function schedule(){ if(raf) return; raf = requestAnimationFrame(()=>{ raf=0; syncGlow(); }); }
+  let st = 0;
+  function onScroll(){ if(st) return; st = setTimeout(()=>{ st = 0; syncGlow(); }, 120); }
+  /* ★ req-glow6：上移同步**不靠事件配对、也不靠状态类**，而是直接复制卡片的
+     真实 computed transform 到光斑上。这样任何"状态残留"都会被下一次同步自动纠正：
+       · 从播放页/灯箱返回（DOM 从缓存恢复，不触发任何 pointer 事件）
+       · 触屏点按后的粘滞 :hover
+       · 卡片 :hover/:active 之外将来新增的位移
+     并在 pageshow / visibilitychange / focus / popstate 时做一次**全量纠正**。 */
+  let lraf = 0, lastHot = null;
+  function hotCard(){
+    return document.querySelector('.grid > .card:hover, .grid > .card:active, ' +
+                                  '.grid > .fcard:hover, .grid > .fcard:active');
+  }
+  function cardShiftY(card){
+    const t = getComputedStyle(card).transform;
+    if(!t || t === 'none') return 0;
+    const m = t.match(/matrix\(([^)]+)\)/);
+    if(m){ const q = m[1].split(',').map(Number); return q[5] || 0; }
+    return 0;
+  }
+  function applyLift(d, card){
+    const ty = cardShiftY(card);
+    d.style.transform = ty ? 'translateY(' + ty + 'px)' : '';
+  }
+  function syncLift(){
+    if(lraf) return;
+    lraf = requestAnimationFrame(() => {
+      lraf = 0;
+      const hot = hotCard();
+      if(lastHot && lastHot !== hot){            /* 上一张已不高亮 → 读它真实位移归位 */
+        const d = GLOW_MAP.get(lastHot);
+        if(d) applyLift(d, lastHot);
+      }
+      if(hot){
+        const d = GLOW_MAP.get(hot);
+        if(d) applyLift(d, hot);
+      }
+      lastHot = hot;
+    });
+  }
+  /* 全量纠正：页面恢复（返回/切回标签/窗口重新聚焦）时用，把每张光斑拉回与卡片一致 */
+  function forceLiftSync(){
+    lastHot = null;
+    GLOW_MAP.forEach((d, card) => applyLift(d, card));
+    syncLift();
+  }
+  window.addEventListener('resize', schedule);
+  window.addEventListener('load', schedule);
+  const bodyEl0 = document.getElementById('body');
+  if (bodyEl0){
+    bodyEl0.addEventListener('scroll', onScroll, {passive:true});      /* 幂等：只补新进视口的卡 */
+    ['pointerover', 'pointerout', 'pointerdown', 'pointerup', 'pointercancel',
+     'touchstart', 'touchend', 'pointermove'].forEach(ev =>
+      bodyEl0.addEventListener(ev, syncLift, {passive:true}));
+    /* ★ req-glow6：从播放页/灯箱返回、切回标签、窗口聚焦时全量纠正一次
+       （这些场景不触发 pointer 事件，否则光斑会停在"上移"位置） */
+    window.addEventListener('pageshow', forceLiftSync);
+    window.addEventListener('focus', forceLiftSync);
+    window.addEventListener('popstate', forceLiftSync);
+    document.addEventListener('visibilitychange', () => { if(!document.hidden) forceLiftSync(); });
+    new MutationObserver(muts => {
+      for(const m of muts){
+        if(m.target && m.target.closest && m.target.closest('#glowlayer')) continue;
+        /* req-glowfix：repaint 会清空 #body（光斑层一起没了）—— 直接同步补回，
+           不走 requestAnimationFrame，避免"重绘后有一帧没光" */
+        syncGlow(); return;
+      }
+    }).observe(bodyEl0, {childList:true, subtree:true});
+  }
+  schedule();
+})();
+
+/* ===== req2567-modal：磨砂确认弹窗控制 =====
+   弹窗 HTML 位于脚本块之后，脚本执行时元素还不存在，
+   因此必须等 DOM 就绪再绑事件（否则按钮完全没反应，弹窗卡死）。 */
+let __gotoCb = null;
+function askGoto(dirName, onOk){
+  const mask = document.getElementById('gotoMask');
+  const dirEl = document.getElementById('gotoDir');
+  if(!mask || !dirEl){
+    /* 降级：元素缺失时退回原生确认 */
+    if(confirm('跳到目录「' + dirName + '」？')) onOk();
+    return;
+  }
+  if(mask.dataset.bound !== '1') bindGotoModal();   /* 现场补绑，防漏 */
+  dirEl.textContent = dirName;
+  __gotoCb = onOk;
+  mask.classList.add('on');
+  mask.setAttribute('aria-hidden', 'false');
+  setTimeout(function(){ const c = document.getElementById('gotoCancel'); if(c) c.focus(); }, 60);
+}
+function closeGoto(ok){
+  const mask = document.getElementById('gotoMask');
+  if(!mask) return;
+  mask.classList.remove('on');
+  mask.setAttribute('aria-hidden', 'true');
+  const cb = __gotoCb; __gotoCb = null;
+  if(ok && cb) cb();
+}
+function bindGotoModal(){
+  const mask = document.getElementById('gotoMask');
+  if(!mask || mask.dataset.bound === '1') return;
+  mask.dataset.bound = '1';
+  const okBtn = document.getElementById('gotoOk');
+  const cancelBtn = document.getElementById('gotoCancel');
+  if(okBtn) okBtn.addEventListener('click', function(){ closeGoto(true); });
+  if(cancelBtn) cancelBtn.addEventListener('click', function(){ closeGoto(false); });
+  mask.addEventListener('click', function(e){ if(e.target === mask) closeGoto(false); });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && mask.classList.contains('on')){
+      e.stopPropagation(); closeGoto(false);
+    }
+  }, true);
+}
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', bindGotoModal);
+}else{
+  bindGotoModal();
+}
+window.addEventListener('load', bindGotoModal);
+</script>
+
+<div id="gotoMask" aria-hidden="true">
+  <div id="gotoModal" role="dialog" aria-modal="true" aria-labelledby="gotoDir">
+    <p class="ttl">跳到这个目录？</p>
+    <p class="dir" id="gotoDir"></p>
+    <p class="sub">将离开当前列表，打开该目录的浏览页</p>
+    <div class="row">
+      <button id="gotoCancel">取消</button>
+      <button class="pri" id="gotoOk">跳到目录</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>115emby · 选目录</title>
+<style>
+  :root{--bg:#fbfcff;--card:#fff;--line:#e6ebf2;--fg:#1c2430;--sub:#7c8798;--accent:#2196f3}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,"Segoe UI",system-ui,sans-serif}
+  header{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--line);padding:10px 14px;z-index:5}
+  h1{font-size:16px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+  .tag{font-size:11px;background:#eef4ff;color:#2563eb;border-radius:999px;padding:2px 8px}
+  .crumbs{display:flex;flex-wrap:wrap;gap:6px;font-size:13px;color:var(--sub)}
+  .crumbs button{background:none;border:none;color:var(--accent);cursor:pointer;padding:2px 4px;font-size:13px}
+  .crumbs .sep{color:#c8d1de}
+  main{padding:14px;max-width:1100px;margin:0 auto}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .folder{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;
+          display:flex;align-items:center;gap:8px;cursor:pointer;transition:.15s}
+  .folder:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .folder .ico{font-size:18px}
+  .folder .nm{font-size:13px;word-break:break-all}
+  .empty{color:var(--sub);font-size:14px;padding:18px;text-align:center;border:1px dashed var(--line);border-radius:10px}
+  .bar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 14px;
+       display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button.primary{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer}
+  button.primary:disabled{background:#b8c3d1;cursor:not-allowed}
+  button.ghost{background:#fff;border:1px solid var(--line);border-radius:8px;padding:9px 14px;font-size:14px;cursor:pointer}
+  select,input[type=number]{border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;background:#fff}
+  .stat{font-size:13px;color:var(--sub)}
+  .prog{height:6px;background:#eef1f6;border-radius:99px;overflow:hidden;flex:1;min-width:120px}
+  .prog i{display:block;height:100%;background:var(--accent);width:0%}
+  .mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--sub)}
+</style>
+<style>
+/* 页面固定：禁止双指缩放/双击缩放（看图遮罩与播放页舞台自带 touch-action:none，不受影响） */
+html,body{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%;text-size-adjust:100%;
+  overscroll-behavior-y:contain}
+</style>
+<script>
+/* iOS 会忽略 user-scalable=no，这里再拦一层系统捏合手势（只拦页面缩放，不影响页面内 JS 手势） */
+(function(){['gesturestart','gesturechange','gestureend'].forEach(function(ev){
+  document.addEventListener(ev,function(e){e.preventDefault();},{passive:false});});})();
+</script>
+</head>
+<body>
+<header>
+  <h1>115emby <span class="tag">选目录扫描</span></h1>
+  <div class="crumbs" id="crumbs"></div>
+</header>
+
+<main>
+  <div class="grid" id="grid"></div>
+</main>
+
+<div class="bar">
+  <button class="ghost" id="up">↑ 上一级</button>
+  <label class="stat">深度
+    <input type="number" id="depth" value="3" min="0" max="10" style="width:64px">
+  </label>
+  <label class="stat">类型
+    <select id="kinds">
+      <option value="">视频 + 图片</option>
+      <option value="video">仅视频</option>
+      <option value="image">仅图片</option>
+    </select>
+  </label>
+  <button class="primary" id="go">从此目录开始扫描</button>
+  <div class="prog"><i id="bar"></i></div>
+  <span class="stat" id="status">未开始</span>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let cur = "-1", parentOf = {}, names = {"-1": "根目录"}, trail = [];
+let jobId = null, timer = null;
+
+function crumbRender(){
+  $("#crumbs").innerHTML = "";
+  const items = [{id:"-1",name:"根目录"}, ...trail];
+  items.forEach((it, i) => {
+    const b = document.createElement("button");
+    b.textContent = it.name || it.id;
+    b.onclick = () => load(it.id, it.name, i);
+    $("#crumbs").appendChild(b);
+    if (i < items.length - 1) {
+      const s = document.createElement("span"); s.className = "sep"; s.textContent = "›";
+      $("#crumbs").appendChild(s);
+    }
+  });
+}
+
+async function load(cid, name, trailIdx){
+  cur = cid;
+  if (trailIdx !== undefined) trail = trail.slice(0, trailIdx);
+  else if (name) trail = [...trail, {id: cid, name}];
+  crumbRender();
+  $("#grid").innerHTML = '<div class="empty">加载中…</div>';
+  try{
+    const r = await fetch(`/api/dirs?parent=${encodeURIComponent(cid)}`);
+    const j = await r.json();
+    if (j.crumbs && j.crumbs.length){
+      // 上游给了真实面包屑（含中文名），优先用它
+      trail = j.crumbs.slice(1);            // 去掉根
+      crumbRender();
+    }
+    const fs = j.folders || [];
+    if (!fs.length){ $("#grid").innerHTML = '<div class="empty">这个目录下没有子目录' +
+      (j.source === "local" ? "（本地库还没扫过这里，接上 115 凭据后可选）" : "") + '</div>'; return; }
+    $("#grid").innerHTML = "";
+    fs.forEach(f => {
+      const d = document.createElement("div");
+      d.className = "folder";
+      d.innerHTML = '<span class="ico">📁</span><span class="nm"></span>';
+      d.querySelector(".nm").textContent = f.name || f.id;
+      d.onclick = () => { parentOf[f.id] = cur; names[f.id] = f.name; load(f.id, f.name); };
+      $("#grid").appendChild(d);
+    });
+  }catch(e){
+    $("#grid").innerHTML = '<div class="empty">加载失败：' + e + '</div>';
+  }
+}
+
+$("#up").onclick = () => { if (trail.length){ const p = trail[trail.length-2] || {id:"-1",name:"根目录"}; load(p.id, p.name, Math.max(0, trail.length-1)); } else load("-1","根目录"); };
+
+$("#go").onclick = async () => {
+  const kinds = $("#kinds").value;
+  const body = {root_id: cur, depth: Number($("#depth").value),
+                kinds: kinds ? [kinds] : [], root_name: (trail[trail.length-1]||{}).name || ""};
+  $("#go").disabled = true; $("#status").textContent = "启动中…";
+  try{
+    const r = await fetch("/api/scan", {method:"POST", headers:{"Content-Type":"application/json"},
+                                        body: JSON.stringify(body)});
+    const j = await r.json();
+    if (!r.ok){ $("#status").textContent = "启动失败：" + (j.detail || r.status); $("#go").disabled = false; return; }
+    jobId = j.job_id; poll();
+  }catch(e){ $("#status").textContent = "启动失败：" + e; $("#go").disabled = false; }
+};
+
+async function poll(){
+  clearTimeout(timer);
+  try{
+    const r = await fetch(`/api/scan/${jobId}`);
+    const s = await r.json();
+    const total = (s.dirs_done||0) + (s.pending||0);
+    const pct = total ? Math.round((s.dirs_done||0) / total * 100) : 0;
+    $("#bar").style.width = pct + "%";
+    $("#status").textContent = `${s.status} · 目录 ${s.dirs_done||0}/${total} · 项目 ${s.items_found||0}` +
+      (s.last_error ? " · 错误:" + s.last_error : "");
+    if (s.status === "done" || s.status === "error" || s.status === "canceled"){
+      $("#go").disabled = false; return;
+    }
+    timer = setTimeout(poll, 1200);
+  }catch(e){ $("#status").textContent = "查询失败：" + e; $("#go").disabled = false; }
+}
+
+load("-1", "根目录", 0);
+</script>
+</body>
+</html>

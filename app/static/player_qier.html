@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>播放 · 115emby</title>
+<link rel="stylesheet" href="/static/vendor/qier/index.css">
+<style>
+  :root{--fg:#e6e8ee;--dim:#8b93a7;--sub:#7c8798;--acc:#4c8dff;--line:#2a2f3d}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#05070a;color:var(--fg);
+    font:14px/1.6 -apple-system,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif;overflow:hidden}
+  #app{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  /* ★ 关键：播放器容器铺满并 contain，解决"尺寸不对" */
+  #app .qier-player{width:100%!important;height:100%!important;background:#05070a}
+  #app video{width:100%!important;height:100%!important;object-fit:contain!important;background:#05070a}
+  #top{position:fixed;left:0;right:0;top:0;z-index:20;display:flex;align-items:center;gap:10px;
+    padding:10px 14px 22px;background:linear-gradient(#000d,#0000);transition:.2s;pointer-events:none}
+  #top>*{pointer-events:auto}
+  #top.hide{opacity:0;transform:translateY(-8px)}
+  #title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+  .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid #ffffff22;background:#ffffff14;
+    color:var(--fg);border-radius:999px;padding:6px 13px;font-size:13px;cursor:pointer;text-decoration:none}
+  .btn:hover{background:#ffffff28}
+  .chip{border:1px solid #ffffff22;color:var(--dim);border-radius:999px;padding:1px 9px;font-size:11px}
+  #na{position:fixed;inset:0;z-index:30;display:none;place-items:center;background:#05070a;overflow:auto}
+  #na.on{display:grid}
+  #na .card{width:min(520px,92vw);text-align:center;padding:24px 20px;border:1px solid var(--line);
+    border-radius:16px;background:#12141a}
+  #na h2{margin:0 0 8px;font-size:17px}
+  #na p{margin:0 0 18px;color:var(--dim);font-size:13px;line-height:1.7}
+  #na .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  #na a.btn{font-size:14px;padding:10px 18px}
+  code{background:#0e1015;border:1px solid var(--line);border-radius:8px;padding:6px 9px;
+    font:12px/1.5 ui-monospace,Consolas,monospace;display:block;margin:10px 0;word-break:break-all;color:#b9c2d6}
+</style>
+<style>
+/* 页面固定：禁止双指缩放/双击缩放（看图遮罩与播放页舞台自带 touch-action:none，不受影响） */
+html,body{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%;text-size-adjust:100%;
+  overscroll-behavior-y:contain}
+</style>
+<script>
+/* iOS 会忽略 user-scalable=no，这里再拦一层系统捏合手势（只拦页面缩放，不影响页面内 JS 手势） */
+(function(){['gesturestart','gesturechange','gestureend'].forEach(function(ev){
+  document.addEventListener(ev,function(e){e.preventDefault();},{passive:false});});})();
+</script>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="top">
+  <button class="btn" onclick="back()">← 返回</button>
+  <span id="title">载入中…</span>
+  <span class="chip" id="tag"></span>
+  <button class="btn" onclick="fsVideo()" title="全屏">⛶ 全屏</button>
+  <button class="btn" onclick="webFull()" title="网页全屏（App 内嵌浏览器用）">⤢</button>
+</div>
+
+<div id="na">
+  <div class="card">
+    <h2 id="naTitle">这个格式浏览器播不了</h2>
+    <p id="naText"></p>
+    <div class="row">
+      <a class="btn" id="dl" href="#">下载原文件</a>
+      <a class="btn" id="ext" href="#">用系统播放器打开</a>
+    </div>
+    <code id="naUrl"></code>
+    <p style="font-size:12px;color:var(--sub)">手机上一键唤起 VLC / nPlayer / Infuse；电脑可复制上面的地址给 mpv / VLC。</p>
+  </div>
+</div>
+
+<script src="/static/vendor/qier/index.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const qs = new URLSearchParams(location.search);
+const m = location.pathname.match(/^\/(?:play|view)\/([^/]+)\/?$/);
+const ITEM = decodeURIComponent(qs.get('id') || (m ? m[1] : ''));
+
+/* 浏览器能直接播的容器（编码仍须 H.264/AAC/VP8/VP9） */
+const DIRECT = ['mp4','m4v','mov','webm','ogv','ogg'];
+const NOTES = {
+  mkv:'MKV 容器浏览器不支持（即使里面是 H.264）',
+  avi:'AVI 容器浏览器不支持',
+  ts:'TS 分片容器浏览器不支持',
+  m2ts:'M2TS 容器浏览器不支持',
+  flv:'FLV 容器浏览器不支持',
+  wmv:'WMV 容器浏览器不支持',
+  mpg:'MPEG-PS 容器浏览器不支持',
+  mpeg:'MPEG-PS 容器浏览器不支持',
+  rm:'RealVideo 编码浏览器无解码器',
+  rmvb:'RealVideo 编码浏览器无解码器'
+};
+
+function back(){
+  const f = qs.get('from');
+  if(f && f.charAt(0) === '/'){ location.href = f; return; }
+  location.href = '/browse2';
+}
+document.addEventListener('keydown', e => { if(e.key === 'Escape') back(); });
+
+let player = null;
+async function boot(){
+  if(!ITEM){ $('#title').textContent = '缺少 id'; return; }
+  let info = null;
+  try{ info = await (await fetch('/api/item/' + encodeURIComponent(ITEM), {cache:'no-store'})).json(); }
+  catch(e){ $('#title').textContent = '加载失败'; return; }
+
+  $('#title').textContent = info.name || ITEM;
+  document.title = (info.name || '播放') + ' · 115emby';
+  const ext = ((info.ext || (info.name||'').split('.').pop() || '')).toLowerCase();
+  $('#tag').textContent = (ext || '?').toUpperCase() + ' · ' + human(info.size);
+
+  const playable = info.kind === 'video' && DIRECT.includes(ext);
+  if(info.kind !== 'video'){                       // 图片：交给 /api/image 直接显示
+    $('#app').innerHTML = '<img src="/api/image/' + encodeURIComponent(ITEM) + '" style="max-width:100%;max-height:100%;object-fit:contain">';
+    return;
+  }
+  if(!playable){ showUnsupported(ext, info); return; }
+
+  const src = '/api/play/' + encodeURIComponent(ITEM);
+  const poster = '/api/thumb/' + encodeURIComponent(ITEM);
+  // 先放一个 <video>（QierPlayer 会接管它，也保证兜底可用）
+  // 注意：初始**不能**带 controls —— 否则 QierPlayer 接管后浏览器的原生控制条还在，
+  // 会和我们的 UI / Qier 控制条叠在一起（实测底部出现 Chrome 原生黑条）。
+  // Qier 初始化失败时在 catch 里再加回来做兜底。
+  $('#app').innerHTML = '<video id="v" src="' + src + '" poster="' + poster +
+    '" autoplay playsinline webkit-playsinline preload="metadata"></video>';
+  try{
+    const Ctor = (typeof QierPlayer === 'function') ? QierPlayer
+               : (window.qierPlayer || window.Qierplayer || null);
+    if(!Ctor) throw new Error('qier not loaded');
+    // 正确参数：src + videoProps（不是 video:{src}）
+    player = new Ctor({
+      container: $('#app'),
+      src: src,
+      video: $('#v'),
+      videoProps: { controls: false, autoplay: true, playsinline: true,
+                    'webkit-playsinline': true, poster: poster },
+      posterOptions: { url: poster },
+      themeColor: '#4c8dff',
+    });
+    const v = document.querySelector('#app video');
+    if(v){ v.setAttribute('playsinline',''); v.setAttribute('webkit-playsinline',''); }
+  }catch(e){
+    // 兜底：Qier 不可用时用原生控件（原生控件里也有全屏）
+    const v = $('#v'); if(v) v.setAttribute('controls','');
+  }
+  hideChromeOnIdle();
+}
+
+function human(n){
+  if(!n) return '';
+  const u=['B','KB','MB','GB','TB']; let i=0,v=n;
+  while(v>=1024&&i<u.length-1){v/=1024;i++;}
+  return (v>=10||i===0?Math.round(v):v.toFixed(1))+u[i];
+}
+
+async function showUnsupported(ext, info){
+  $('#na').classList.add('on');
+  $('#naTitle').textContent = '这个格式浏览器播不了';
+  $('#naText').innerHTML = (NOTES[ext] || '该容器/编码浏览器无法解码')
+    + '<br>已为你准备好原文件与系统播放器两条路。';
+  $('#dl').href = '/api/play/' + encodeURIComponent(ITEM);
+  $('#naUrl').textContent = '/api/play/' + ITEM;
+  try{
+    const h = await (await fetch('/api/handoff/' + encodeURIComponent(ITEM))).json();
+    const u = h.pass_url;
+    $('#naUrl').textContent = u;
+    const ua = navigator.userAgent;
+    if(/iPhone|iPad|iPod/i.test(ua)){
+      $('#ext').href = 'vlc-x-callback://x-callback-url/stream?url=' + encodeURIComponent(u);
+      $('#ext').textContent = '用 VLC 打开';
+    }else if(/Android/i.test(ua)){
+      $('#ext').href = 'intent:' + u + '#Intent;action=android.intent.action.VIEW;type=video/*;end';
+      $('#ext').textContent = '用系统播放器打开';
+    }else{
+      $('#ext').href = h.m3u_url || u;
+      $('#ext').textContent = '下载 .m3u（双击用本地播放器）';
+    }
+  }catch(e){ $('#ext').style.display = 'none'; }
+}
+
+
+/* ---------- 全屏：优先视频元素原生全屏，再退 document ---------- */
+function currentVideo(){ return document.querySelector('#app video'); }
+async function fsVideo(){
+  const v = currentVideo();
+  try{
+    if(v && typeof v.webkitEnterFullscreen === 'function'){ v.webkitEnterFullscreen(); return; }  // iOS
+    if(v && v.requestFullscreen){ await v.requestFullscreen(); return; }
+    if(document.documentElement.requestFullscreen){ await document.documentElement.requestFullscreen(); return; }
+  }catch(e){}
+  webFull();                               // 最后兜底：网页全屏
+}
+function webFull(){
+  const app = $('#app');
+  app.classList.toggle('webfs');
+  if(app.classList.contains('webfs')){
+    app.style.position = 'fixed'; app.style.inset = '0'; app.style.zIndex = '9999';
+    $('#top').classList.add('hide');
+    if(screen.orientation && screen.orientation.lock){ try{ screen.orientation.lock('landscape'); }catch(e){} }
+  }else{
+    app.style.position = ''; app.style.inset = ''; app.style.zIndex = '';
+    $('#top').classList.remove('hide');
+    if(screen.orientation && screen.orientation.unlock){ try{ screen.orientation.unlock(); }catch(e){} }
+  }
+}
+document.addEventListener('dblclick', e => {
+  if(e.target.closest('#app')) fsVideo();
+});
+
+function hideChromeOnIdle(){
+  let t = null;
+  const show = () => { $('#top').classList.remove('hide'); clearTimeout(t); t = setTimeout(() => $('#top').classList.add('hide'), 3000); };
+  ['mousemove','touchstart','keydown'].forEach(ev => document.addEventListener(ev, show, {passive:true}));
+  show();
+}
+boot();
+</script>
+</body>
+</html>

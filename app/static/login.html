@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>登录 · 115 相册</title>
+<meta name="theme-color" content="#0b0e14">
+<style>
+  :root{--bg:#0b0e14;--card:#141922;--fg:#e9eef7;--dim:#8b97ab;--acc:#3d7dff;--err:#ff6b6b;--bd:rgba(255,255,255,.10)}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0}
+  body{background:radial-gradient(1200px 700px at 50% -10%,#16203a 0%,var(--bg) 60%);color:var(--fg);
+       font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+       display:grid;place-items:center;padding:24px;padding-bottom:calc(24px + env(safe-area-inset-bottom))}
+  .box{width:100%;max-width:360px}
+  .logo{width:56px;height:56px;border-radius:16px;margin:0 auto 14px;display:grid;place-items:center;
+        background:linear-gradient(135deg,#2f6bff,#7aa7ff);box-shadow:0 10px 30px rgba(61,125,255,.35)}
+  .logo svg{width:28px;height:28px;fill:none;stroke:#fff;stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round}
+  h1{margin:0 0 4px;font-size:19px;font-weight:600;text-align:center}
+  .sub{margin:0 0 22px;text-align:center;color:var(--dim);font-size:12.5px}
+  form{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:18px;
+       box-shadow:0 18px 44px rgba(0,0,0,.45)}
+  label{display:block;font-size:12.5px;color:var(--dim);margin:0 0 7px}
+  .pw{position:relative}
+  input[type=password],input[type=text]{width:100%;height:46px;border-radius:11px;border:1px solid var(--bd);
+       background:#0f141d;color:var(--fg);padding:0 44px 0 13px;font-size:16px;outline:none}
+  input:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(61,125,255,.18)}
+  .eye{position:absolute;right:6px;top:6px;width:34px;height:34px;border:0;background:transparent;
+       color:var(--dim);display:grid;place-items:center;border-radius:8px}
+  .eye svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7}
+  .row{display:flex;align-items:center;gap:8px;margin:13px 2px 0;color:var(--dim);font-size:12.5px}
+  .row input{width:16px;height:16px;accent-color:var(--acc)}
+  .row label{margin:0}
+  button.go{width:100%;height:46px;margin-top:16px;border:0;border-radius:11px;font-size:15px;font-weight:600;
+       color:#fff;background:linear-gradient(135deg,#2f6bff,#4d86ff);box-shadow:0 8px 20px rgba(61,125,255,.30)}
+  button.go:disabled{opacity:.6}
+  .msg{min-height:18px;margin:11px 2px 0;font-size:12.5px;color:var(--err);text-align:center}
+  .msg.ok{color:#5ed08a}
+  .foot{margin:16px 0 0;text-align:center;color:var(--dim);font-size:11.5px;line-height:1.7}
+  .foot code{background:rgba(255,255,255,.06);padding:1px 5px;border-radius:5px;font-size:11px}
+  @media (max-height:560px){.logo{display:none}.sub{margin-bottom:14px}}
+</style>
+<style>
+/* 页面固定：禁止双指缩放/双击缩放（看图遮罩与播放页舞台自带 touch-action:none，不受影响） */
+html,body{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%;text-size-adjust:100%;
+  overscroll-behavior-y:contain}
+</style>
+<script>
+/* iOS 会忽略 user-scalable=no，这里再拦一层系统捏合手势（只拦页面缩放，不影响页面内 JS 手势） */
+(function(){['gesturestart','gesturechange','gestureend'].forEach(function(ev){
+  document.addEventListener(ev,function(e){e.preventDefault();},{passive:false});});})();
+</script>
+</head>
+<body>
+<div class="box">
+  <div class="logo">
+    <svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><circle cx="8.5" cy="10" r="1.6"/><path d="m4 17 5-4.5 4 3.5 3-2.5 4 3.5"/></svg>
+  </div>
+  <h1>115 相册</h1>
+  <p class="sub">请输入访问口令</p>
+
+  <form id="f">
+    <label for="pw">访问口令</label>
+    <div class="pw">
+      <input id="pw" type="password" name="password" autocomplete="current-password"
+             enterkeyhint="go" autofocus required>
+      <button class="eye" type="button" id="eye" aria-label="显示口令">
+        <svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/></svg>
+      </button>
+    </div>
+    <div id="setupExtra" hidden>
+      <label for="pw2" style="margin-top:13px">确认口令</label>
+      <div class="pw">
+        <input id="pw2" type="password" autocomplete="new-password" enterkeyhint="go">
+      </div>
+      <div id="tokWrap" hidden>
+        <label for="tok" style="margin-top:13px">部署口令（SETUP_TOKEN）</label>
+        <div class="pw"><input id="tok" type="text" autocomplete="off"></div>
+      </div>
+    </div>
+    <div class="row">
+      <input id="rm" type="checkbox" checked>
+      <label for="rm">记住我（30 天）</label>
+    </div>
+    <button class="go" id="go" type="submit">登 录</button>
+    <div class="msg" id="msg"></div>
+  </form>
+
+  <p class="foot">
+    口令保存在服务端，可在后台 <code>/admin</code> 里修改<br>
+    忘了口令：服务器上执行 <code>python -m app.site_auth setpw &lt;新口令&gt;</code>
+  </p>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const q = new URLSearchParams(location.search);
+/* ★ req-setup：首次部署时**在网页上**设管理口令（以前要求 SSH 跑 CLI）。
+   先问 /api/site/state 的 has_password，为假就把表单切成"设置口令"模式。 */
+let SETUP = false;
+(async () => {
+  try{
+    const j = await (await fetch('/api/site/state', {cache: 'no-store'})).json();
+    if(j && j.logged_in){ location.replace(q.get('next') || '/'); return; }
+    if(!j || j.has_password !== false) return;
+    SETUP = true;
+    document.querySelector('h1').textContent = '首次部署';
+    document.querySelector('.sub').textContent = '请设置管理口令，至少 8 位';
+    $('#setupExtra').hidden = false;
+    if(j.need_setup_token) $('#tokWrap').hidden = false;
+    $('#go').textContent = '设置并进入';
+    $('#pw').setAttribute('autocomplete', 'new-password');
+    $('#pw').setAttribute('placeholder', '至少 8 位');
+    document.querySelector('.foot').innerHTML =
+      '这是唯一一次免口令入口，设置完成后自动关闭<br>' +
+      '口令保存在服务端，之后可在后台 <code>/admin</code> 里修改';
+    $('#pw').focus();
+  }catch(e){ /* 取不到状态就当普通登录页 */ }
+})();
+let nxt = q.get('next') || '/';
+if(!/^\//.test(nxt) || nxt.indexOf('//') === 0) nxt = '/';   // 只允许站内跳转
+
+$('#eye').onclick = () => {
+  const i = $('#pw'), show = i.type === 'password';
+  i.type = show ? 'text' : 'password';
+  $('#eye').setAttribute('aria-label', show ? '隐藏口令' : '显示口令');
+  i.focus();
+};
+
+async function submit(e){
+  if(e) e.preventDefault();
+  const pw = $('#pw').value;
+  if(!pw){ $('#msg').textContent = SETUP ? '请输入新口令' : '请输入口令'; return; }
+  if(SETUP){
+    if(pw.length < 8){ $('#msg').textContent = '口令至少 8 位'; return; }
+    if(pw !== $('#pw2').value){ $('#msg').textContent = '两次输入的口令不一致'; return; }
+  }
+  const btn = $('#go');
+  btn.disabled = true; $('#msg').className = 'msg'; $('#msg').textContent = '';
+  try{
+    const r = await fetch(SETUP ? '/api/setup' : '/api/login', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(SETUP
+        ? {password: pw, confirm: $('#pw2').value,
+           setup_token: ($('#tok') || {}).value || ''}
+        : {password: pw, remember: $('#rm').checked})
+    });
+    const j = await r.json().catch(() => ({}));
+    if(r.ok && j.ok){
+      $('#msg').className = 'msg ok';
+      $('#msg').textContent = SETUP ? '设置成功，正在进入…' : '登录成功，正在进入…';
+      location.replace(nxt);
+      return;
+    }
+    $('#msg').textContent = j.detail || ('登录失败（HTTP ' + r.status + '）');
+    $('#pw').select();
+  }catch(err){
+    $('#msg').textContent = '网络错误：' + (err && err.message ? err.message : err);
+  }finally{
+    btn.disabled = false;
+  }
+}
+$('#f').addEventListener('submit', submit);
+
+/* ★ req-setup：原来的「未设口令 → 提示去服务器跑 CLI」分支已删除。
+   现在 has_password 为假时，上面的 req-setup 逻辑会把表单切成「首次部署」，
+   直接在网页上设置口令；这里的旧提示会把那个表单的说明覆盖掉。 */
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+services:
+  app:
+    build: .
+    image: 115emby:latest
+    container_name: 115emby-api
+    restart: unless-stopped
+    ports:
+      # 左边是宿主机端口，按需改；建议只监听 127.0.0.1 再挂反代
+      - "127.0.0.1:17867:8000"
+    env_file:
+      - .env
+    volumes:
+      # 索引库、缩略图库、口令文件都在这里，**务必持久化**
+      - ./data:/app/data
+    # 小内存机器上必须限制，否则 ffmpeg 会把机器吃满
+    mem_limit: 512m
+    cpus: 1.5
+
+# 可选：如果你要用「生成 MD5 秒传」以外的扫描方式，或想暴露给外网，
+# 建议前面加一层 caddy/nginx 做 TLS，不要直接暴露 8000。

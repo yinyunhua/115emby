@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>115emby</title>
+<style>
+  :root{--bg:#f7f8fb;--card:#fff;--line:#e7ebf2;--fg:#1b2330;--sub:#8593a5;
+        --accent:#2f7cf6;--badge:rgba(20,24,31,.72);--lb:#0b0d12}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+  header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:8px 12px 0}
+  #crumbs{display:flex;align-items:center;gap:6px;overflow-x:auto;white-space:nowrap;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:8px}
+  #crumbs::-webkit-scrollbar{display:none}
+  .toolbar{display:flex;align-items:center;gap:10px;padding-bottom:8px}
+  .counts{font-size:12px;color:var(--sub);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:#fff}
+  .seg button{border:none;background:none;color:var(--sub);font-size:12px;padding:5px 11px;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff}
+  /* 骨架占位 */
+  .sk{border-radius:12px;background:linear-gradient(90deg,#eef1f6 25%,#e3e8f0 37%,#eef1f6 63%);
+    background-size:400% 100%;animation:skshine 1.2s ease-in-out infinite}
+  @keyframes skshine{0%{background-position:100% 0}100%{background-position:-100% 0}}
+  .crumb{display:inline-flex;align-items:center;gap:4px;font-size:15px;font-weight:600;
+    color:var(--fg);background:none;border:none;padding:2px 4px;cursor:pointer}
+  .crumb.dim{font-weight:500;color:var(--sub);font-size:13px}
+  .sep{color:#c9d2e0;font-size:13px}
+  main{padding:10px 10px 96px}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  @media(min-width:600px){ .grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px} }
+  @media(min-width:900px){ .grid{grid-template-columns:repeat(4,minmax(0,1fr))} }
+  @media(min-width:1200px){ .grid{grid-template-columns:repeat(5,minmax(0,1fr))} }
+  @media(min-width:1600px){ .grid{grid-template-columns:repeat(6,minmax(0,1fr))} }
+  .tile{display:flex;flex-direction:column;gap:6px;cursor:pointer;user-select:none}
+  .thumb{position:relative;width:100%;aspect-ratio:1/1;border-radius:12px;overflow:hidden;
+    background:#eef1f6;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);
+    transition:transform .12s ease}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb .fold{font-size:46px;line-height:1}
+  .tile:active .thumb{transform:scale(.975)}
+  .vbadge{position:absolute;top:6px;right:6px;display:inline-flex;align-items:center;gap:3px;
+    background:var(--badge);color:#fff;font-size:11px;font-weight:600;padding:2px 7px;border-radius:999px}
+  .vbadge svg{width:10px;height:10px;fill:#fff}
+  .hint{position:absolute;bottom:6px;left:6px;font-size:10px;color:#fff;background:rgba(0,0,0,.45);
+    padding:1px 6px;border-radius:999px}
+  .name{font-size:12.5px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;
+    -webkit-box-orient:vertical;overflow:hidden;word-break:break-all;min-height:2.7em}
+  .empty{margin:40px auto;text-align:center;color:var(--sub);font-size:13px;
+    border:1px dashed var(--line);border-radius:14px;padding:26px;max-width:320px}
+
+  #lb{position:fixed;inset:0;z-index:100;background:var(--lb);display:none;
+    align-items:center;justify-content:center;color:#e8edf5}
+  #lb.on{display:flex}
+  #lbTop{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:10px;
+    padding:10px 12px;background:linear-gradient(rgba(11,13,18,.9),rgba(11,13,18,0));z-index:3}
+  #lbName{flex:1;font-size:13px;color:#aab4c4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #lbCount{font-size:12px;color:#8b96a8;font-variant-numeric:tabular-nums}
+  #lbStage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:auto}
+  #lbImg{max-width:100%;max-height:100%;object-fit:contain;transition:opacity .15s}
+  #lbImg{touch-action:none;transform-origin:center center;will-change:transform}
+  #lbStage{touch-action:none}
+  #lbRot{display:flex;align-items:center;justify-content:center;width:100%;height:100%}
+  /* 竖屏看横图：把"宽 100vh × 高 100vw"的盒子转 90°，视觉上正好铺满竖屏 */
+  #lbRot.rot90{width:100vh;height:100vw;transform:rotate(90deg);transition:transform .2s ease}
+  #lbRot #lbImg,#lbRot video{max-width:100%;max-height:100%}
+  #lb.orient-hint #lbInfo::after{content:" · 已自动旋转（竖屏看横图）";color:#7c8798}
+  #lbVideo{max-width:100%;max-height:100%;background:#000}
+  #lbBar{position:absolute;bottom:0;left:0;right:0;display:flex;align-items:center;gap:10px;
+    padding:12px 14px 16px;background:linear-gradient(rgba(11,13,18,0),rgba(11,13,18,.92));z-index:3}
+  #lbInfo{flex:1;font-size:12px;color:#aab4c4;line-height:1.5}
+  #lbBar button,#lbBar a{background:rgba(255,255,255,.10);color:#e8edf5;border:1px solid #2a3240;
+    border-radius:8px;padding:7px 11px;font-size:13px;cursor:pointer;text-decoration:none}
+  #lbBar button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  #lbSpin{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#8b96a8;
+    font-size:13px;z-index:2;display:none}
+  #lbSpin.on{display:block}
+</style>
+<style>
+/* 页面固定：禁止双指缩放/双击缩放（看图遮罩与播放页舞台自带 touch-action:none，不受影响） */
+html,body{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%;text-size-adjust:100%;
+  overscroll-behavior-y:contain}
+</style>
+<script>
+/* iOS 会忽略 user-scalable=no，这里再拦一层系统捏合手势（只拦页面缩放，不影响页面内 JS 手势） */
+(function(){['gesturestart','gesturechange','gestureend'].forEach(function(ev){
+  document.addEventListener(ev,function(e){e.preventDefault();},{passive:false});});})();
+</script>
+</head>
+<body>
+
+<header>
+  <div id="crumbs">
+    <button class="crumb" data-id="-1"><span style="font-size:16px">🏠</span>主页</button>
+  </div>
+  <div class="toolbar">
+    <span class="counts" id="counts"></span>
+    <button class="iconbtn" id="refreshBtn" title="刷新当前目录" style="width:32px;height:32px;
+      border-radius:50%;display:grid;place-items:center;background:#fff;border:1px solid var(--line);
+      color:var(--sub);cursor:pointer">
+      <svg viewBox="0 0 24 24" style="width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round">
+        <path d="M4 12a8 8 0 0 1 13.7-5.6M20 12a8 8 0 0 1-13.7 5.6"/><path d="M17.5 3v4h-4M6.5 21v-4h4"/>
+      </svg></button>
+    <span class="seg" id="sortseg">
+      <button data-order="mtime" class="on">最新</button>
+      <button data-order="name">名称</button>
+    </span>
+  </div>
+</header>
+
+<main>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" style="display:none">这里是空的</div>
+</main>
+
+<div id="lb">
+  <div id="lbTop">
+    <div id="lbName"></div>
+    <div id="lbCount"></div>
+    <button onclick="lbClose()" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid #2a3240;border-radius:8px;padding:6px 10px;cursor:pointer">✕</button>
+  </div>
+  <div id="lbStage">
+    <div id="lbRot">
+      <img id="lbImg" alt="" style="display:none">
+      <video id="lbVideo" controls playsinline controlsList="nofullscreen nodownload"
+             style="display:none"></video>
+    </div>
+  </div>
+  <div id="lbSpin">加载中…</div>
+  <div id="lbBar">
+    <div id="lbInfo"></div>
+    <button id="lbFull" onclick="lbToggleFull()">⛶ 全屏</button>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const qs = new URLSearchParams(location.search);
+let parent = qs.get("parent") || "-1";
+let items = [], folders = [], lbIndex = -1, slideshow = false, slideTimer = null;
+let sortOrder = (localStorage.getItem('emby_order') || 'mtime');
+
+const VIDEO_SVG = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+const NO_PLAY = ["mkv","avi","rmvb","rm","ts","m2ts","flv","wmv"];
+
+function human(n){
+  if(!n) return "";
+  const u=["B","KB","MB","GB","TB"]; let i=0, v=n;
+  while(v>=1024 && i<u.length-1){v/=1024;i++;}
+  return (v>=10||i===0?Math.round(v):v.toFixed(1))+u[i];
+}
+function fmtTime(t){
+  if(!t) return "";
+  const d = new Date(t*1000);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")+
+         " "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+}
+function isVideo(it){ return it && it.kind === "video"; }
+function extOf(it){ return ((it && it.name) || "").split(".").pop().toLowerCase(); }
+
+/* ---------------- 面包屑 ---------------- */
+async function renderCrumbs(id){
+  const box = $("#crumbs");
+  box.innerHTML = '<button class="crumb" data-id="-1"><span style="font-size:16px">🏠</span>主页</button>';
+  if(id === "-1") return;
+  try{
+    const j = await (await fetch("/api/folder/" + encodeURIComponent(id))).json();
+    (j.ancestors || []).forEach((c, i) => {
+      const sp = document.createElement("span"); sp.className = "sep"; sp.textContent = "/";
+      box.appendChild(sp);
+      const b = document.createElement("button");
+      b.className = "crumb" + (i === (j.ancestors.length-1) ? "" : " dim");
+      b.dataset.id = c.id; b.textContent = c.name || c.id;
+      box.appendChild(b);
+    });
+  }catch(e){}
+}
+
+/* ---------------- 网格 ---------------- */
+function tileFolder(f){
+  const t = document.createElement("div");
+  t.className = "tile";
+  t.innerHTML = '<div class="thumb"><span class="fold">📂</span></div><div class="name"></div>';
+  t.querySelector(".name").textContent = f.name || f.id;
+  t.onclick = () => { location.href = "/browse?parent=" + encodeURIComponent(f.id); };
+  return t;
+}
+function tileItem(it, idx){
+  const t = document.createElement("div");
+  t.className = "tile";
+  const v = isVideo(it);
+  t.innerHTML = '<div class="thumb"><img loading="lazy" alt="">' +
+    (v ? '<span class="vbadge">' + VIDEO_SVG + '视频</span>' : '') +
+    (it.size ? '<span class="hint">' + human(it.size) + '</span>' : '') +
+    '</div><div class="name"></div>';
+  const img = t.querySelector("img");
+  img.dataset.thumbId = it.id;
+  img.src = "/api/thumb/" + encodeURIComponent(it.id);
+  // 视频抓帧中后端回 404（X-Thumb: PENDING），这里退避重试，不必手动刷新
+  img.onerror = () => { img.style.opacity = '0'; };    // 失败就露出卡片背景，不显示文字
+  t.querySelector(".name").textContent = it.name || it.id;
+  t.onclick = () => lbOpen(idx);
+  return t;
+}
+
+function skeletons(n){
+  const grid = $("#grid");
+  grid.innerHTML = "";
+  for(let i = 0; i < n; i++){
+    const d = document.createElement("div");
+    d.className = "tile";
+    d.innerHTML = '<div class="thumb sk"></div><div class="sk" style="height:12px;border-radius:4px"></div>';
+    grid.appendChild(d);
+  }
+}
+
+async function load(id){
+  parent = id;
+  history.replaceState(null, "", "/browse?parent=" + encodeURIComponent(id));
+  renderCrumbs(id);
+  const grid = $("#grid"), empty = $("#empty");
+  empty.style.display = "none";
+  skeletons(8);
+  $("#counts").textContent = "加载中…";
+  try{
+    const j = await (await fetch("/api/browse?parent=" + encodeURIComponent(id) +
+                                 "&limit=500&order=" + encodeURIComponent(sortOrder))).json();
+    folders = j.folders || []; items = j.items || [];
+    grid.innerHTML = "";
+    folders.forEach(f => grid.appendChild(tileFolder(f)));
+    items.forEach((it, i) => grid.appendChild(tileItem(it, i)));
+    $("#counts").textContent = (folders.length ? folders.length + " 个文件夹" : "") +
+      (folders.length && items.length ? " · " : "") +
+      (items.length ? items.length + " 个文件" : "");
+    if(!grid.children.length){
+      empty.style.display = "block";
+      empty.textContent = "这里还没有文件（新加的目录点后台「快速读取新内容」）";
+      $("#counts").textContent = "";
+    }
+    const open = qs.get("open");
+    if(open){
+      const idx = items.findIndex(x => x.id === open);
+      if(idx >= 0) lbOpen(idx);
+    }
+  }catch(e){
+    empty.style.display = "block"; empty.textContent = "加载失败：" + e.message;
+  }
+}
+
+/* ---------------- 灯箱（直链加载：服务器不出图片/视频字节） ---------------- */
+async function lbOpen(i){
+  if(i < 0 || i >= items.length) return;
+  lbIndex = i;
+  $("#lb").classList.add("on");
+  document.body.style.overflow = "hidden";
+  await lbShow();
+}
+function lbClose(){
+  $("#lb").classList.remove("on");
+  document.body.style.overflow = "";
+  lbStopSlide();
+  const v = $("#lbVideo");
+  v.pause(); v.removeAttribute("src"); try{ v.load(); }catch(e){}
+  $("#lbImg").removeAttribute("src");
+  _resetTransform(false);
+  const q = new URLSearchParams(location.search);
+  if(q.get("open")){ q.delete("open"); history.replaceState(null,"","/browse?"+q.toString()); }
+}
+function lbShow(){
+  const p = items[lbIndex];
+  if(!p) return;
+  const v = isVideo(p), ext = extOf(p);
+  $("#lbImg").style.display = v ? "none" : "block";
+  $("#lbVideo").style.display = v ? "block" : "none";
+  $("#lbImg").style.opacity = ".3";
+  $("#lbName").textContent = p.name || p.id;
+  $("#lbCount").textContent = (lbIndex + 1) + " / " + items.length;
+  $("#lbInfo").textContent = [human(p.size), fmtTime(p.mtime), v ? "视频" : "图片"].filter(Boolean).join(" · ");
+  $("#lbSpin").classList.add("on");
+  _resetTransform(false);
+  $("#lbRot").classList.remove("rot90");
+  $("#lb").classList.remove("orient-hint");
+  _lockState = "";
+
+  fetch("/api/link/" + encodeURIComponent(p.id))
+    .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+    .then(d => {
+      const url = d.url;
+      if(v){
+        const vid = $("#lbVideo");
+        vid.src = url;
+        vid.muted = slideshow;
+        vid.play().catch(() => {});
+        $("#lbSpin").classList.remove("on");
+        if(NO_PLAY.includes(ext)){
+          $("#lbInfo").textContent += " · 浏览器通常播不了该格式（可下载 / 外部播放器）";
+        }
+        vid.onerror = () => { $("#lbSpin").classList.remove("on");
+          $("#lbInfo").textContent += " · 无法播放（浏览器不支持该编码）"; };
+      }else{
+        const img = $("#lbImg");
+        let retried = false;
+        img.onload = () => {
+          $("#lbSpin").classList.remove("on");
+          img.style.opacity = "1";
+          _applyOrientation();          // 按方向自动决定是否旋转
+        };
+        img.onerror = () => {
+          if(!retried){ retried = true; img.src = url + (url.includes("?") ? "&" : "?") + "_r=1"; return; }
+          $("#lbSpin").classList.remove("on"); img.style.opacity = "1";
+          $("#lbInfo").textContent += " · 原图加载失败（直链可能过期，稍后重试）";
+        };
+        img.src = url;
+      }
+    })
+    .catch(e => {
+      $("#lbSpin").classList.remove("on");
+      $("#lbInfo").textContent += " · 取直链失败：" + e.message;
+    });
+}
+function lbStep(d){
+  if(items.length < 2) return;
+  lbIndex = (lbIndex + d + items.length) % items.length;
+  lbStopSlide();
+  lbShow();
+}
+function lbStopSlide(){ slideshow = false; clearTimeout(slideTimer); }
+
+/* ---------------- 全屏（视频优先用原生全屏，iOS 也支持） ---------------- */
+function lbToggleFull(){
+  const lb = $("#lb");
+  const v = $("#lbVideo");
+  const isVid = items[lbIndex] && isVideo(items[lbIndex]);
+  if(document.fullscreenElement || document.webkitFullscreenElement){
+    (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+    if(screen.orientation && screen.orientation.unlock){ try{ screen.orientation.unlock(); }catch(e){} }
+    return;
+  }
+  if(isVid && v && v.webkitEnterFullscreen && /iPhone|iPad|iPod/.test(navigator.userAgent)){
+    try { v.webkitEnterFullscreen(); return; } catch(e){}
+  }
+  const fn = lb.requestFullscreen || lb.webkitRequestFullscreen || lb.msRequestFullscreen;
+  const p = items[lbIndex];
+  if(fn) fn.call(lb).then(() => {
+    // 视频全屏时尽量锁横屏（安卓 Chrome 支持；iOS 不支持会静默失败）
+    if(isVideo(p) && screen.orientation && screen.orientation.lock){
+      screen.orientation.lock("landscape").catch(() => {});
+    }
+    setTimeout(_applyOrientation, 120);
+  }).catch(() => {});
+}
+
+/* ---------------- 双指捏合缩放 + 单指拖动（只缩放图片元素本身） ---------------- */
+let _scale = 1, _tx = 0, _ty = 0;
+let _startDist = 0, _startScale = 1, _startX = 0, _startY = 0, _panX = 0, _panY = 0, _pinching = false;
+
+function _applyTransform(){
+  const img = $("#lbImg");
+  if(!img) return;
+  img.style.transform = "translate(" + _tx + "px," + _ty + "px) scale(" + _scale + ")";
+}
+function _resetTransform(animate){
+  const img = $("#lbImg");
+  _scale = 1; _tx = 0; _ty = 0; _pinching = false;
+  if(img){
+    img.style.transition = animate ? "transform .18s ease" : "none";
+    _applyTransform();
+    setTimeout(() => { img.style.transition = "opacity .15s"; }, 200);
+  }
+}
+function _dist(t1, t2){
+  return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+}
+function _clamp(v, a, b){ return Math.min(b, Math.max(a, v)); }
+
+/* ---------------- 横竖屏识别 ---------------- */
+function _isPortrait(){
+  if(window.matchMedia){
+    try { return window.matchMedia("(orientation: portrait)").matches; } catch(e){}
+  }
+  return window.innerHeight >= window.innerWidth;
+}
+function _orientDebug(extra){
+  if(qs.get("debug") !== "1") return;
+  const v = $("#lbVideo"), p = items[lbIndex];
+  const info = [
+    "屏" + (_isPortrait() ? "竖" : "横"),
+    (v && v.videoWidth ? ("视频" + v.videoWidth + "x" + v.videoHeight) : "视频尺寸未就绪"),
+    (document.fullscreenElement ? "全屏中" : "非全屏"),
+    "lock:" + (_lockState || "未尝试"),
+    p ? p.kind : "-",
+  ].join(" ");
+  $("#lbInfo").textContent = (extra ? extra + " · " : "") + info;
+}
+
+let _lockState = "";        // 记录屏幕方向锁的结果，便于诊断
+
+async function _tryLockLandscape(){
+  if(!(screen.orientation && screen.orientation.lock)) { _lockState = "不支持"; return false; }
+  if(!document.fullscreenElement && !document.webkitFullscreenElement){ _lockState = "不在全屏"; return false; }
+  try{
+    await screen.orientation.lock("landscape");
+    _lockState = "已锁横屏";
+    return true;
+  }catch(e){
+    _lockState = "失败(" + (e && e.name ? e.name : "err") + ")";
+    return false;
+  }
+}
+
+async function _applyOrientation(){
+  const rot = $("#lbRot"), img = $("#lbImg"), v = $("#lbVideo"), lb = $("#lb");
+  const p = items[lbIndex];
+  if(!rot || !lb) return;
+  if(!p){ rot.classList.remove("rot90"); lb.classList.remove("orient-hint"); return; }
+
+  const isVid = isVideo(p);
+  // 取素材自身尺寸：图片用 naturalWidth，视频用 videoWidth
+  const mw = isVid ? (v.videoWidth || 0) : (img.naturalWidth || 0);
+  const mh = isVid ? (v.videoHeight || 0) : (img.naturalHeight || 0);
+  const landscapeMedia = mw > 0 && mh > 0 && mw > mh * 1.05;   // 明显是横图/横视频
+  const portraitScreen = _isPortrait();
+
+  if(!landscapeMedia || !portraitScreen){
+    rot.classList.remove("rot90");
+    lb.classList.remove("orient-hint");
+    _orientDebug();
+    return;
+  }
+
+  if(isVid){
+    const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    if(!inFs){
+      // 非全屏时**不旋转视频**（原生控件会跟着侧过来，反而更难用），只提示
+      rot.classList.remove("rot90");
+      lb.classList.remove("orient-hint");
+      $("#lbInfo").textContent += " · 横屏视频：点「⛶ 全屏」或把手机横过来";
+      _orientDebug();
+      return;
+    }
+    // 全屏时：优先锁横屏（安卓 Chrome 可用）；锁不上再退化成 CSS 旋转
+    const locked = await _tryLockLandscape();
+    rot.classList.toggle("rot90", !locked);
+    lb.classList.toggle("orient-hint", !locked);
+    _orientDebug(locked ? "已锁定横屏" : "锁屏不可用，已自动旋转");
+  }else{
+    rot.classList.add("rot90");
+    lb.classList.add("orient-hint");
+    _orientDebug();
+  }
+}
+
+$("#lbStage").addEventListener("touchstart", e => {
+  const p = items[lbIndex];
+  if(!p || isVideo(p)) return;                  // 视频交给原生播放器
+  if(e.touches.length === 2){
+    _pinching = true;
+    _startDist = _dist(e.touches[0], e.touches[1]) || 1;
+    _startScale = _scale;
+    e.preventDefault();
+  } else if(e.touches.length === 1 && _scale > 1.01){
+    _panX = e.touches[0].clientX; _panY = e.touches[0].clientY;
+    _startX = _tx; _startY = _ty;
+  }
+}, { passive: false });
+
+$("#lbStage").addEventListener("touchmove", e => {
+  if(_pinching && e.touches.length === 2){
+    const d = _dist(e.touches[0], e.touches[1]);
+    _scale = _clamp(_startScale * (d / _startDist), 1, 5);
+    _applyTransform();
+    e.preventDefault();
+  } else if(e.touches.length === 1 && _scale > 1.01 && !_pinching){
+    let dx = e.touches[0].clientX - _panX;
+    let dy = e.touches[0].clientY - _panY;
+    // 图片被旋转 90° 时，手指方向要换算到图片坐标系，否则拖动手感是歪的
+    if($("#lbRot") && $("#lbRot").classList.contains("rot90")){ const t = dx; dx = dy; dy = -t; }
+    _tx = _startX + dx;
+    _ty = _startY + dy;
+    _applyTransform();
+    e.preventDefault();
+  }
+}, { passive: false });
+
+$("#lbStage").addEventListener("touchend", e => {
+  if(_pinching && e.touches.length < 2){
+    _pinching = false;
+    if(_scale <= 1.05) _resetTransform(true);
+  }
+}, { passive: true });
+
+/* 视频进度上报（续播） */
+setInterval(() => {
+  const v = $("#lbVideo");
+  if($("#lb").classList.contains("on") && v && v.duration && !v.paused && items[lbIndex]){
+    fetch("/api/progress", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({id: items[lbIndex].id, position: v.currentTime, duration: v.duration})}).catch(()=>{});
+  }
+}, 5000);
+
+/* ---------------- 交互 ---------------- */
+$("#lb").addEventListener("click", e => {
+  if(e.target.id === "lb" || e.target.id === "lbStage") lbClose();
+});
+/* 没有左右箭头了：点图片切下一张（放大状态下不触发，避免与拖动冲突） */
+$("#lbImg").addEventListener("click", e => {
+  if(_scale > 1.01) return;
+  e.stopPropagation();
+  lbStep(1);
+});
+document.addEventListener("keydown", e => {
+  if(!$("#lb").classList.contains("on")) return;
+  if(e.key === "Escape") lbClose();
+  else if(e.key === "ArrowRight") lbStep(1);
+  else if(e.key === "ArrowLeft") lbStep(-1);
+  else if(e.key === "f" || e.key === "F"){ lbToggleFull(); }
+});
+let tx = 0, ty = 0;
+$("#lb").addEventListener("touchstart", e => {
+  tx = e.changedTouches[0].clientX; ty = e.changedTouches[0].clientY;
+}, {passive:true});
+$("#lb").addEventListener("touchend", e => {
+  const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty;
+  if(Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) lbStep(dx < 0 ? 1 : -1);
+}, {passive:true});
+
+$("#sortseg").addEventListener("click", ev => {
+  const b = ev.target.closest("button[data-order]");
+  if(!b) return;
+  sortOrder = b.dataset.order || "mtime";
+  try { localStorage.setItem("emby_order", sortOrder); } catch(e) {}
+  $("#sortseg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  load(parent);
+});
+$("#sortseg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.order === sortOrder));
+
+$("#refreshBtn").addEventListener("click", () => {
+  document.querySelectorAll('#grid img[data-thumb-id]').forEach(img => {
+    img.dataset.tries = 0;
+    img.src = "/api/thumb/" + encodeURIComponent(img.dataset.thumbId) + "?r=" + Date.now();
+  });
+  load(parent);
+});
+
+$("#crumbs").addEventListener("click", ev => {
+  const b = ev.target.closest(".crumb");
+  if(b) load(b.dataset.id || "-1");
+});
+
+/* 视频元数据就绪后才知道宽高，这时才能判断横竖 */
+$("#lbVideo").addEventListener("loadedmetadata", () => setTimeout(_applyOrientation, 60));
+$("#lbVideo").addEventListener("webkitbeginfullscreen", () => setTimeout(_applyOrientation, 200));
+$("#lbVideo").addEventListener("webkitendfullscreen", () => {
+  if(screen.orientation && screen.orientation.unlock){ try{ screen.orientation.unlock(); }catch(e){} }
+  _lockState = "";
+  setTimeout(_applyOrientation, 200);
+});
+
+/* 方向/尺寸/全屏变化时重新适配 */
+window.addEventListener("resize", () => setTimeout(_applyOrientation, 80));
+window.addEventListener("orientationchange", () => setTimeout(_applyOrientation, 220));
+if(screen.orientation && screen.orientation.addEventListener){
+  screen.orientation.addEventListener("change", () => setTimeout(_applyOrientation, 120));
+}
+function _onFullscreenChange(){
+  if(!document.fullscreenElement && !document.webkitFullscreenElement){
+    if(screen.orientation && screen.orientation.unlock){ try{ screen.orientation.unlock(); }catch(e){} }
+    _lockState = "";
+  }
+  setTimeout(_applyOrientation, 150);
+}
+document.addEventListener("fullscreenchange", _onFullscreenChange);
+document.addEventListener("webkitfullscreenchange", _onFullscreenChange);
+
+load(parent);
+</script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>115emby 跨域助手 · 自检</title>
+<style>
+ body{margin:0;padding:20px;background:#0e1116;color:#e8eef7;
+      font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+ h1{font-size:19px;margin:0 0 6px}
+ .sub{color:#8d9bb0;font-size:13px;margin-bottom:18px}
+ .box{background:#161b22;border:1px solid #263041;border-radius:12px;padding:16px;margin-bottom:14px}
+ .k{font-size:12px;color:#8d9bb0;letter-spacing:.04em}
+ .v{font-size:15px;margin-top:4px;word-break:break-all}
+ .ok{color:#4ade80}.bad{color:#f87171}.warn{color:#fbbf24}
+ .big{font-size:26px;font-weight:700;line-height:1.3}
+ button{background:#2563eb;color:#fff;border:0;border-radius:9px;padding:13px 20px;
+        font-size:15px;cursor:pointer;margin-top:6px}
+ button:disabled{opacity:.5;cursor:default}
+ pre{background:#0b0f14;border:1px solid #263041;border-radius:8px;padding:10px;
+     overflow:auto;font-size:12px;color:#9fb3c8;max-height:220px}
+ ul{margin:8px 0 0;padding-left:20px}li{margin:5px 0}
+ code{background:#0b0f14;padding:2px 6px;border-radius:5px;font-size:13px}
+</style></head><body>
+<h1>115emby 跨域助手 · 自检</h1>
+<div class="sub">这个页面会真实请求一次 115 的分片清单，用来判断扩展有没有生效。</div>
+
+<div class="box"><div id="verdict" class="big">正在检测…</div>
+  <div id="hint" class="sub" style="margin:8px 0 0"></div></div>
+
+<div class="box"><div class="k">最近的视频</div><div class="v" id="item">读取中…</div></div>
+
+<div class="box"><div class="k">诊断明细</div><pre id="log">—</pre></div>
+
+<div class="box"><div class="k">对照实验（点一下就知道扩展开没开）</div>
+  <button id="go">开始检测</button></div>
+
+<script>
+const logEl = document.getElementById('log');
+const lines = [];
+function say(s){ lines.push(s); logEl.textContent = lines.join('\n'); }
+function set(html, cls, hint){
+  const v = document.getElementById('verdict');
+  v.className = 'big ' + (cls||''); v.textContent = html;
+  document.getElementById('hint').textContent = hint || '';
+}
+async function pickItem(){
+  // 必须用 kind=video（lib=video 会返回 kind=all，混进图片）
+  // 优先挑 mkv/avi 这类**必须走 HLS**的格式：最能反映扩展是否生效
+  const ord = ['mkv','avi','rmvb','flv','wmv','ts','mov','mp4'];
+  const all = [];
+  for (const kind of ['video']) {
+    try {
+      const r = await fetch('/api/library?kind=' + kind + '&limit=80');
+      const j = await r.json();
+      for (const x of (j.items || [])) all.push(x);
+    } catch(e){ say('列库失败: ' + e.message); }
+  }
+  say('列库得到 ' + all.length + ' 条');
+  for (const ext of ord) {
+    const hit = all.find(x => String(x.ext||'').toLowerCase() === ext && x.kind === 'video');
+    if (hit) { say('选中格式: ' + ext); return hit; }
+  }
+  const v = all.find(x => x.kind === 'video');
+  if (v) say('选中格式: ' + (v.ext||'?'));
+  return v || null;
+}
+async function run(){
+  const btn = document.getElementById('go');
+  btn.disabled = true; set('正在检测…', '', '');
+  lines.length = 0;
+  try {
+    const it = await pickItem();
+    if (!it) { set('没找到视频', 'warn', '库里没有可测的视频'); btn.disabled = false; return; }
+    document.getElementById('item').textContent =
+      (it.name || it.name_idx || '?') + '   [' + (it.ext||'?') + ']';
+    say('测试条目: ' + (it.id||'?'));
+
+    // ① 同源清单
+    const m = await fetch('/api/hls/' + encodeURIComponent(it.id) + '/at?i=0');
+    say('① 我们的清单 /api/hls  → HTTP ' + m.status);
+    if (!m.ok) { set('清单取不到', 'bad', '服务器侧问题，不是扩展问题：HTTP ' + m.status); btn.disabled=false; return; }
+    const txt = await m.text();
+    let variant = '';
+    for (const l of txt.split('\n')) if (l && !l.startsWith('#')) { variant = l.trim(); break; }
+    if (!variant) { set('清单是空的', 'bad', '115 没给这个视频转码流'); btn.disabled=false; return; }
+    const host = variant.split('/')[2];
+    say('② 115 分片主机  ' + host);
+
+    // ③ 关键：跨域 fetch 115 的变体清单（这一步过不去 = 扩展没生效）
+    try {
+      const x = await fetch(variant, {mode:'cors'});
+      const b = await x.text();
+      say('③ 跨域读取      → HTTP ' + x.status + '，读到 ' + b.length + ' 字节');
+      say('   ACAO = ' + JSON.stringify(x.headers.get('access-control-allow-origin')));
+      say('   ACAC = ' + JSON.stringify(x.headers.get('access-control-allow-credentials')));
+      if (x.ok && b.length > 0) {
+        set('✅ 扩展已生效', 'ok',
+            'hls.js 可以直连 115 取分片了。若播放仍卡，请硬刷新（Ctrl+F5）播放页。');
+      } else {
+        set('⚠️ 能连上但读不到内容', 'warn', 'HTTP ' + x.status + '，可能是签名过期，重试一次。');
+      }
+    } catch (e) {
+      say('③ 跨域读取      → 失败: ' + e);
+      set('❌ 扩展没生效', 'bad',
+          '浏览器仍拦截了跨域请求（CORS）。请确认扩展已启用，并硬刷新本页。');
+      say('');
+      say('常见原因：');
+      say('  1) 扩展装了但没启用，或加载时选错了文件夹（要选含 manifest.json 的那层）');
+      say('  2) 装完没刷新页面');
+      say('  3) Edge 的「站点访问权限」把扩展限制住了（扩展详情里改成"在所有网站上"）');
+      say('  4) 装的是旧版 rules.json');
+    }
+    btn.disabled = false;
+  } catch (e) {
+    set('检测出错', 'bad', String(e));
+    btn.disabled = false;
+  }
+}
+document.getElementById('go').onclick = run;
+run();
+</script></body></html>
